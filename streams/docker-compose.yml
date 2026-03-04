@@ -1,0 +1,15 @@
+services:
+  login:
+    build: ./login
+    container_name: login
+    restart: unless-stopped
+
+  click:
+    build: ./click
+    container_name: click
+    restart: unless-stopped
+
+  purchase:
+    build: ./purchase
+    container_name: purchase
+    restart: unless-stopped
