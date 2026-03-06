@@ -1,15 +1,70 @@
+version: '3.9'
+
 services:
+  # =========================
+  # Zookeeper (Kafka dependency)
+  # =========================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.3.0
+    container_name: zookeeper
+    ports:
+      - "2181:2181"
+
+  # =========================
+  # Kafka broker
+  # =========================
+  kafka:
+    image: confluentinc/cp-kafka:7.3.0
+    container_name: kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+
+  # =========================
+  # PostgreSQL database
+  # =========================
+  postgres:
+    image: postgres:15
+    container_name: postgres
+    environment:
+      POSTGRES_USER: kafka
+      POSTGRES_PASSWORD: kafka
+      POSTGRES_DB: events
+    ports:
+      - "5432:5432"
+
+  # =========================
+  # Event consumer (Kafka → PostgreSQL)
+  # =========================
+  consumer:
+    build: ./consumer
+    container_name: consumer
+    depends_on:
+      - kafka
+      - postgres
+
+  # =========================
+  # Event generators
+  # =========================
   login:
     build: ./login
     container_name: login
-    restart: unless-stopped
+    depends_on:
+      - kafka
 
   click:
     build: ./click
     container_name: click
-    restart: unless-stopped
+    depends_on:
+      - kafka
 
   purchase:
     build: ./purchase
     container_name: purchase
-    restart: unless-stopped
+    depends_on:
+      - kafka
