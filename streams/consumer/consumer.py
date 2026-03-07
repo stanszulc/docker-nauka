@@ -1,10 +1,10 @@
-# consumer.py
 import json
 import time
 import psycopg2
 from kafka import KafkaConsumer
 
 TOPICS = ['login_events', 'click_events', 'purchase_events']
+ALLOWED_TABLES = {'login_events', 'click_events', 'purchase_events'}
 
 # -------------------------
 # Connect to PostgreSQL with retry
@@ -15,7 +15,7 @@ while True:
             dbname="events",
             user="kafka",
             password="kafka",
-            host="postgres",  # nazwa serwisu PostgreSQL w docker-compose
+            host="postgres",
             port=5432
         )
         print("✅ Połączono z PostgreSQL")
@@ -46,7 +46,7 @@ while True:
     try:
         consumer = KafkaConsumer(
             *TOPICS,
-            bootstrap_servers='kafka:9092',  # nazwa serwisu Kafka w docker-compose
+            bootstrap_servers='kafka:9092',
             group_id='analytics',
             auto_offset_reset='earliest',
             enable_auto_commit=True
@@ -71,12 +71,14 @@ for msg in consumer:
     print(f"TOPIC: {topic}")
     print(f"EVENT: {event}")
 
-    # Insert into PostgreSQL safely
     try:
         with conn.cursor() as cur:
-            cur.execute(f"INSERT INTO {topic} (data) VALUES (%s)", (json.dumps(event),))
-        conn.commit()
-        print(f"✅ Zapisano event w tabeli {topic}")
+            if topic in ALLOWED_TABLES:
+                cur.execute(f"INSERT INTO {topic} (data) VALUES (%s)", (json.dumps(event),))
+                conn.commit()
+                print(f"✅ Zapisano event w tabeli {topic}")
+            else:
+                print(f"⚠️ Nieznany topic, pomijam: {topic}")
     except Exception as e:
         print(f"❌ Błąd zapisu do PostgreSQL: {e}")
         conn.rollback()
