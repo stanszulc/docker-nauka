@@ -76,3 +76,11 @@ services:
     container_name: purchase
     depends_on:
       - kafka
+      
+  traffic:
+    build: ./traffic
+    depends_on:
+      - kafka
+    environment:
+      - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    restart: on-failure
