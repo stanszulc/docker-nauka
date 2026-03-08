@@ -29,39 +29,13 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
             "hideFrom": {
               "legend": false,
               "tooltip": false,
               "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
             }
           },
           "mappings": [],
@@ -82,35 +56,84 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 24,
         "w": 12,
         "x": 0,
         "y": 0
       },
-      "id": 1,
+      "id": 4,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": false,
+          "showZoom": true
         },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "dark-green"
+                },
+                "opacity": 0.4,
+                "rotation": {
+                  "fixed": 0,
+                  "max": 360,
+                  "min": -360,
+                  "mode": "mod"
+                },
+                "size": {
+                  "fixed": 5,
+                  "max": 15,
+                  "min": 2
+                },
+                "symbol": {
+                  "fixed": "img/icons/marker/circle.svg",
+                  "mode": "fixed"
+                },
+                "symbolAlign": {
+                  "horizontal": "center",
+                  "vertical": "center"
+                },
+                "textConfig": {
+                  "fontSize": 12,
+                  "offsetX": 0,
+                  "offsetY": 0,
+                  "textAlign": "center",
+                  "textBaseline": "middle"
+                }
+              }
+            },
+            "location": {
+              "mode": "auto"
+            },
+            "name": "Layer 1",
+            "tooltip": true,
+            "type": "markers"
+          }
+        ],
         "tooltip": {
-          "mode": "single",
-          "sort": "none"
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "coords",
+          "lat": 50.06,
+          "lon": 19.94,
+          "zoom": 12
         }
       },
       "pluginVersion": "11.4.0",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "bffed6wjxkdtsa"
-          },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'predkosc_kmh')::numeric AS predkosc,\r\n  data->>'nazwa' AS ulica\r\nFROM traffic_events\r\nORDER BY created_at ASC\r\n",
+          "rawSql": "SELECT\r\n  NOW() AS time,\r\n  data->>'nazwa' AS name,\r\n  (data->>'lat')::numeric AS latitude,\r\n  (data->>'lon')::numeric AS longitude,\r\n  ROUND(AVG((data->>'poziom_korkow')::numeric) * 100) AS \"korki\"\r\nFROM traffic_events\r\nWHERE created_at > NOW() - INTERVAL '10 minutes'\r\nGROUP BY data->>'nazwa', data->>'lat', data->>'lon'",
           "refId": "A",
           "sql": {
             "columns": [
@@ -131,8 +154,8 @@
           }
         }
       ],
-      "title": "Predkośc w korkach KRAKÓW",
-      "type": "timeseries"
+      "title": "🗺️ Mapa ruchu Kraków",
+      "type": "geomap"
     },
     {
       "datasource": {
@@ -221,6 +244,119 @@
       "fieldConfig": {
         "defaults": {
           "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 1,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "bffed6wjxkdtsa"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'predkosc_kmh')::numeric AS predkosc,\r\n  data->>'nazwa' AS ulica\r\nFROM traffic_events\r\nORDER BY created_at ASC\r\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Predkośc w korkach KRAKÓW",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "bffed6wjxkdtsa"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
             "mode": "thresholds"
           },
           "custom": {
@@ -250,8 +386,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 8
+        "x": 12,
+        "y": 16
       },
       "id": 3,
       "options": {
@@ -304,13 +440,13 @@
     "list": []
   },
   "time": {
-    "from": "now-6h",
-    "to": "now"
+    "from": "2026-03-08T10:40:42.031Z",
+    "to": "2026-03-08T13:15:18.521Z"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Kraków - ruch i korki",
   "uid": "dffeedrv946psc",
-  "version": 8,
+  "version": 10,
   "weekStart": ""
 }
