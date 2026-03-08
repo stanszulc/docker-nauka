@@ -24,7 +24,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffed6wjxkdtsa"
+        "uid": "bffejxgp5m5tsd"
       },
       "fieldConfig": {
         "defaults": {
@@ -40,7 +40,7 @@
           },
           "mappings": [],
           "thresholds": {
-            "mode": "percentage",
+            "mode": "absolute",
             "steps": [
               {
                 "color": "green",
@@ -170,7 +170,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffed6wjxkdtsa"
+        "uid": "bffejxgp5m5tsd"
       },
       "fieldConfig": {
         "defaults": {
@@ -253,7 +253,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffed6wjxkdtsa"
+        "uid": "bffejxgp5m5tsd"
       },
       "fieldConfig": {
         "defaults": {
@@ -366,7 +366,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffed6wjxkdtsa"
+        "uid": "bffejxgp5m5tsd"
       },
       "fieldConfig": {
         "defaults": {
@@ -462,6 +462,6 @@
   "timezone": "browser",
   "title": "Kraków - ruch i korki",
   "uid": "dffeedrv946psc",
-  "version": 12,
+  "version": 3,
   "weekStart": ""
 }
