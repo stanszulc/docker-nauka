@@ -4,5 +4,6 @@ providers:
   - name: Default
     folder: ''
     type: file
+    allowUiUpdates: true
     options:
       path: /var/lib/grafana/dashboards
