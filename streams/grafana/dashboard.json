@@ -40,15 +40,19 @@
           },
           "mappings": [],
           "thresholds": {
-            "mode": "absolute",
+            "mode": "percentage",
             "steps": [
               {
                 "color": "green",
                 "value": null
               },
               {
+                "color": "#EAB839",
+                "value": 25
+              },
+              {
                 "color": "red",
-                "value": 80
+                "value": 50
               }
             ]
           }
@@ -63,6 +67,11 @@
       },
       "id": 4,
       "options": {
+        "basemap": {
+          "config": {},
+          "name": "Layer 0",
+          "type": "default"
+        },
         "controls": {
           "mouseWheelZoom": true,
           "showAttribution": true,
@@ -77,6 +86,7 @@
               "showLegend": true,
               "style": {
                 "color": {
+                  "field": "korki",
                   "fixed": "dark-green"
                 },
                 "opacity": 0.4,
@@ -176,8 +186,12 @@
                 "value": null
               },
               {
+                "color": "#EAB839",
+                "value": 25
+              },
+              {
                 "color": "red",
-                "value": 80
+                "value": 50
               }
             ]
           }
@@ -434,19 +448,20 @@
     }
   ],
   "preload": false,
+  "refresh": "30s",
   "schemaVersion": 40,
   "tags": [],
   "templating": {
     "list": []
   },
   "time": {
-    "from": "2026-03-08T10:40:42.031Z",
-    "to": "2026-03-08T13:15:18.521Z"
+    "from": "now-15m",
+    "to": "now"
   },
   "timepicker": {},
   "timezone": "browser",
   "title": "Kraków - ruch i korki",
   "uid": "dffeedrv946psc",
-  "version": 10,
+  "version": 12,
   "weekStart": ""
 }
