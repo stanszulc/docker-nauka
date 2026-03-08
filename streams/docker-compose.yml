@@ -36,6 +36,7 @@ services:
   # =========================
   # PostgreSQL
   # =========================
+  
   postgres:
     image: postgres:15
     container_name: postgres
@@ -45,16 +46,20 @@ services:
       POSTGRES_DB: events
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
 
   # =========================
   # Consumer (Kafka → PostgreSQL)
   # =========================
+  
   consumer:
     build: ./consumer
     container_name: consumer
     depends_on:
       - kafka
       - postgres
+    restart: on-failure
 
   # =========================
   # Event generators
@@ -94,3 +99,6 @@ services:
       - GF_SECURITY_ADMIN_PASSWORD=admin
     depends_on:
       - postgres
+
+volumes:
+  postgres_data:
