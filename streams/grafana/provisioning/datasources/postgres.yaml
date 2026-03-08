@@ -1,0 +1,13 @@
+apiVersion: 1
+
+datasources:
+  - name: PostgreSQL
+    type: postgres
+    url: postgres:5432
+    database: events
+    user: kafka
+    secureJsonData:
+      password: kafka
+    jsonData:
+      sslmode: disable
+    isDefault: true

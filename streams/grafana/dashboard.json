@@ -5,7 +5,7 @@
         "builtIn": 1,
         "datasource": {
           "type": "grafana",
-          "uid": "-- Grafana --"
+          "uid": "PCC52D03280B7034C"
         },
         "enable": true,
         "hide": true,
@@ -18,13 +18,12 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 1,
   "links": [],
   "panels": [
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffejxgp5m5tsd"
+        "uid": "PCC52D03280B7034C"
       },
       "fieldConfig": {
         "defaults": {
@@ -164,13 +163,13 @@
           }
         }
       ],
-      "title": "🗺️ Mapa ruchu Kraków",
+      "title": "\ud83d\uddfa\ufe0f Mapa ruchu Krak\u00f3w",
       "type": "geomap"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffejxgp5m5tsd"
+        "uid": "PCC52D03280B7034C"
       },
       "fieldConfig": {
         "defaults": {
@@ -247,13 +246,13 @@
           }
         }
       ],
-      "title": "Poziom korków",
+      "title": "Poziom kork\u00f3w",
       "type": "gauge"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffejxgp5m5tsd"
+        "uid": "PCC52D03280B7034C"
       },
       "fieldConfig": {
         "defaults": {
@@ -334,7 +333,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "bffed6wjxkdtsa"
+            "uid": "PCC52D03280B7034C"
           },
           "editorMode": "code",
           "format": "table",
@@ -360,13 +359,13 @@
           }
         }
       ],
-      "title": "Predkośc w korkach KRAKÓW",
+      "title": "Predko\u015bc w korkach KRAK\u00d3W",
       "type": "timeseries"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "bffejxgp5m5tsd"
+        "uid": "PCC52D03280B7034C"
       },
       "fieldConfig": {
         "defaults": {
@@ -422,7 +421,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  created_at AS time,\r\n  data->>'nazwa' AS ulica,\r\n  (data->>'predkosc_kmh')::numeric AS \"prędkość km/h\",\r\n  (data->>'predkosc_free')::numeric AS \"limit km/h\",\r\n  ROUND((data->>'poziom_korkow')::numeric * 100) AS \"korki %\"\r\nFROM traffic_events\r\nORDER BY created_at DESC\r\nLIMIT 20",
+          "rawSql": "SELECT\r\n  created_at AS time,\r\n  data->>'nazwa' AS ulica,\r\n  (data->>'predkosc_kmh')::numeric AS \"pr\u0119dko\u015b\u0107 km/h\",\r\n  (data->>'predkosc_free')::numeric AS \"limit km/h\",\r\n  ROUND((data->>'poziom_korkow')::numeric * 100) AS \"korki %\"\r\nFROM traffic_events\r\nORDER BY created_at DESC\r\nLIMIT 20",
           "refId": "A",
           "sql": {
             "columns": [
@@ -460,8 +459,7 @@
   },
   "timepicker": {},
   "timezone": "browser",
-  "title": "Kraków - ruch i korki",
-  "uid": "dffeedrv946psc",
+  "title": "Krak\u00f3w - ruch i korki",
   "version": 3,
   "weekStart": ""
 }
