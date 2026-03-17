@@ -104,6 +104,14 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json
 
+  route:
+    build: ./route
+    depends_on:
+      - kafka
+    restart: on-failure
+
+
+
 volumes:
   postgres_data:
   grafana_data:
