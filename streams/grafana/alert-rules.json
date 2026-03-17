@@ -1,0 +1,142 @@
+[
+    {
+        "id": 1,
+        "uid": "bfgavjx9d2sxsa",
+        "orgID": 1,
+        "folderUID": "efgav07ucq1vkb",
+        "ruleGroup": "commute-group",
+        "title": "Korki Radzisz\u00f3w \u2192 Pod\u0142\u0119\u017ce",
+        "condition": "C",
+        "data": [
+            {
+                "refId": "A",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 3600,
+                    "to": 0
+                },
+                "datasourceUid": "PCC52D03280B7034C",
+                "model": {
+                    "editorMode": "code",
+                    "format": "table",
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "rawQuery": true,
+                    "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'czas_min')::float AS \"czas\"\r\nFROM commute_events\r\nORDER BY created_at DESC\r\nLIMIT 1",
+                    "refId": "A",
+                    "sql": {
+                        "columns": [
+                            {
+                                "parameters": [],
+                                "type": "function"
+                            }
+                        ],
+                        "groupBy": [
+                            {
+                                "property": {
+                                    "type": "string"
+                                },
+                                "type": "groupBy"
+                            }
+                        ],
+                        "limit": 50
+                    }
+                }
+            },
+            {
+                "refId": "B",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 0,
+                    "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                    "conditions": [
+                        {
+                            "evaluator": {
+                                "params": [],
+                                "type": "gt"
+                            },
+                            "operator": {
+                                "type": "and"
+                            },
+                            "query": {
+                                "params": [
+                                    "B"
+                                ]
+                            },
+                            "reducer": {
+                                "params": [],
+                                "type": "last"
+                            },
+                            "type": "query"
+                        }
+                    ],
+                    "datasource": {
+                        "type": "__expr__",
+                        "uid": "__expr__"
+                    },
+                    "expression": "A",
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "reducer": "last",
+                    "refId": "B",
+                    "type": "reduce"
+                }
+            },
+            {
+                "refId": "C",
+                "queryType": "",
+                "relativeTimeRange": {
+                    "from": 0,
+                    "to": 0
+                },
+                "datasourceUid": "__expr__",
+                "model": {
+                    "conditions": [
+                        {
+                            "evaluator": {
+                                "params": [
+                                    25
+                                ],
+                                "type": "gt"
+                            },
+                            "operator": {
+                                "type": "and"
+                            },
+                            "query": {
+                                "params": [
+                                    "C"
+                                ]
+                            },
+                            "reducer": {
+                                "params": [],
+                                "type": "last"
+                            },
+                            "type": "query"
+                        }
+                    ],
+                    "datasource": {
+                        "type": "__expr__",
+                        "uid": "__expr__"
+                    },
+                    "expression": "B",
+                    "intervalMs": 1000,
+                    "maxDataPoints": 43200,
+                    "refId": "C",
+                    "type": "threshold"
+                }
+            }
+        ],
+        "updated": "2026-03-17T15:33:37Z",
+        "noDataState": "NoData",
+        "execErrState": "Error",
+        "for": "1m",
+        "isPaused": false,
+        "notification_settings": {
+            "receiver": "grafana-default-email"
+        },
+        "record": null
+    }
+]
