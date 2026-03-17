@@ -36,7 +36,6 @@ services:
   # =========================
   # PostgreSQL
   # =========================
-  
   postgres:
     image: postgres:15
     container_name: postgres
@@ -52,7 +51,6 @@ services:
   # =========================
   # Consumer (Kafka → PostgreSQL)
   # =========================
-  
   consumer:
     build: ./consumer
     container_name: consumer
@@ -81,13 +79,25 @@ services:
     container_name: purchase
     depends_on:
       - kafka
-      
+
   traffic:
     build: ./traffic
     depends_on:
       - kafka
     environment:
       - KAFKA_BOOTSTRAP_SERVERS=kafka:9092
+    restart: on-failure
+
+  route:
+    build: ./route
+    depends_on:
+      - kafka
+    restart: on-failure
+
+  commute:
+    build: ./commute
+    depends_on:
+      - kafka
     restart: on-failure
 
   grafana:
@@ -103,14 +113,6 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json
-
-  route:
-    build: ./route
-    depends_on:
-      - kafka
-    restart: on-failure
-
-
 
 volumes:
   postgres_data:
