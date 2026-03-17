@@ -15,6 +15,13 @@ PUNKTY = [
 
 API_KEY = "UhkLbIJMhz9LagyQ1BYlLDyPyaLag6Lx"
 
+def get_sleep_time():
+    hour = datetime.now().hour
+    if 6 <= hour < 22:
+        return 120   # co 2 minuty w dzień
+    else:
+        return 1800  # co 30 minut w nocy
+
 while True:
     try:
         producer = KafkaProducer(
@@ -50,9 +57,10 @@ while True:
 
             producer.send('traffic_events', event)
             producer.flush()
-            print(f"✅ {punkt['nazwa']}: {event['predkosc_kmh']} km/h (korki: {event['poziom_korkow']})")
+            sleep_time = get_sleep_time()
+            print(f"✅ {punkt['nazwa']}: {event['predkosc_kmh']} km/h (korki: {event['poziom_korkow']}) | następny odczyt za {sleep_time}s")
 
         except Exception as e:
             print(f"❌ Błąd dla {punkt['nazwa']}: {e}")
 
-    time.sleep(30)
+    time.sleep(get_sleep_time())
