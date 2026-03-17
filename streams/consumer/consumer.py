@@ -3,8 +3,8 @@ import time
 import psycopg2
 from kafka import KafkaConsumer
 
-TOPICS = ['login_events', 'click_events', 'purchase_events', 'traffic_events', 'route_events']
-ALLOWED_TABLES = {'login_events', 'click_events', 'purchase_events', 'traffic_events', 'route_events'}
+TOPICS = ['login_events', 'click_events', 'purchase_events', 'traffic_events', 'route_events', 'commute_events']
+ALLOWED_TABLES = {'login_events', 'click_events', 'purchase_events', 'traffic_events', 'route_events', 'commute_events'}
 
 # -------------------------
 # Connect to PostgreSQL with retry
