@@ -7,13 +7,13 @@
         "canStar": true,
         "canDelete": true,
         "slug": "krakow-ruch-i-korki",
-        "url": "/d/cfh2l3zlwjgu8a/krakow-ruch-i-korki",
+        "url": "/d/cffo52cmjjim8a/krakow-ruch-i-korki",
         "expires": "0001-01-01T00:00:00Z",
-        "created": "2026-03-25T09:52:09Z",
-        "updated": "2026-03-25T10:08:08Z",
+        "created": "2026-03-11T06:34:07Z",
+        "updated": "2026-03-25T10:44:46Z",
         "updatedBy": "admin",
-        "createdBy": "admin",
-        "version": 2,
+        "createdBy": "Anonymous",
+        "version": 3,
         "hasAcl": false,
         "isFolder": false,
         "folderId": 0,
@@ -21,7 +21,7 @@
         "folderTitle": "General",
         "folderUrl": "",
         "provisioned": false,
-        "provisionedExternalId": "",
+        "provisionedExternalId": "dashboard.json",
         "annotationsPermissions": {
             "dashboard": {
                 "canAdd": true,
@@ -141,7 +141,7 @@
                         "editorMode": "code",
                         "format": "table",
                         "rawQuery": true,
-                        "rawSql": "SELECT\r\n  EXTRACT(hour FROM created_at)::int AS \"Godzina\",\r\n  avg((data->>'czas_min')::float) AS \"\u015aredni czas (min)\"\r\nFROM commute_events\r\nWHERE EXTRACT(dow FROM created_at) BETWEEN 1 AND 5\r\nGROUP BY EXTRACT(hour FROM created_at)\r\nORDER BY \"Godzina\"",
+                        "rawSql": "SELECT\r\n  EXTRACT(hour FROM created_at AT TIME ZONE 'Europe/Warsaw')::int AS \"Godzina\",\r\n  avg((data->>'czas_min')::float) AS \"\u015aredni czas (min)\"\r\nFROM commute_events\r\nWHERE EXTRACT(dow FROM created_at AT TIME ZONE 'Europe/Warsaw') BETWEEN 1 AND 5\r\nGROUP BY EXTRACT(hour FROM created_at AT TIME ZONE 'Europe/Warsaw')\r\nORDER BY \"Godzina\"",
                         "refId": "A",
                         "sql": {
                             "columns": [
@@ -248,7 +248,7 @@
                         "editorMode": "code",
                         "format": "table",
                         "rawQuery": true,
-                        "rawSql": "SELECT\r\n  EXTRACT(hour FROM created_at)::int AS \"Godzina\",\r\n  avg((data->>'czas_min')::float) AS \"\u015aredni czas (min)\"\r\nFROM commute_events\r\nWHERE EXTRACT(dow FROM created_at) IN (0, 6)\r\nGROUP BY EXTRACT(hour FROM created_at)\r\nORDER BY \"Godzina\"",
+                        "rawSql": "SELECT\r\n  EXTRACT(hour FROM created_at AT TIME ZONE 'Europe/Warsaw')::int AS \"Godzina\",\r\n  avg((data->>'czas_min')::float) AS \"\u015aredni czas (min)\"\r\nFROM commute_events\r\nWHERE EXTRACT(dow FROM created_at AT TIME ZONE 'Europe/Warsaw') IN (0, 6)\r\nGROUP BY EXTRACT(hour FROM created_at AT TIME ZONE 'Europe/Warsaw')\r\nORDER BY \"Godzina\"",
                         "refId": "A",
                         "sql": {
                             "columns": [
@@ -797,8 +797,8 @@
         "timepicker": {},
         "timezone": "browser",
         "title": "Krak\u00f3w - ruch i korki",
-        "uid": "cfh2l3zlwjgu8a",
-        "version": 2,
+        "uid": "cffo52cmjjim8a",
+        "version": 3,
         "weekStart": ""
     }
 }
