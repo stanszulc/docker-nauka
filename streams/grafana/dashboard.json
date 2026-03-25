@@ -7,12 +7,12 @@
         "canStar": true,
         "canDelete": true,
         "slug": "krakow-ruch-i-korki",
-        "url": "/d/afgatmq2o4kcge/krakow-ruch-i-korki",
+        "url": "/d/cfh2l3zlwjgu8a/krakow-ruch-i-korki",
         "expires": "0001-01-01T00:00:00Z",
-        "created": "2026-03-17T15:07:54Z",
-        "updated": "2026-03-17T15:17:32Z",
+        "created": "2026-03-25T09:52:09Z",
+        "updated": "2026-03-25T10:08:08Z",
         "updatedBy": "admin",
-        "createdBy": "Anonymous",
+        "createdBy": "admin",
         "version": 2,
         "hasAcl": false,
         "isFolder": false,
@@ -21,7 +21,7 @@
         "folderTitle": "General",
         "folderUrl": "",
         "provisioned": false,
-        "provisionedExternalId": "dashboard.json",
+        "provisionedExternalId": "",
         "annotationsPermissions": {
             "dashboard": {
                 "canAdd": true,
@@ -66,6 +66,220 @@
                 "fieldConfig": {
                     "defaults": {
                         "color": {
+                            "mode": "palette-classic"
+                        },
+                        "custom": {
+                            "axisBorderShow": false,
+                            "axisCenteredZero": false,
+                            "axisColorMode": "text",
+                            "axisLabel": "",
+                            "axisPlacement": "auto",
+                            "fillOpacity": 80,
+                            "gradientMode": "none",
+                            "hideFrom": {
+                                "legend": false,
+                                "tooltip": false,
+                                "viz": false
+                            },
+                            "lineWidth": 1,
+                            "scaleDistribution": {
+                                "type": "linear"
+                            },
+                            "thresholdsStyle": {
+                                "mode": "off"
+                            }
+                        },
+                        "mappings": [],
+                        "thresholds": {
+                            "mode": "absolute",
+                            "steps": [
+                                {
+                                    "color": "green",
+                                    "value": null
+                                },
+                                {
+                                    "color": "red",
+                                    "value": 80
+                                }
+                            ]
+                        }
+                    },
+                    "overrides": []
+                },
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 0,
+                    "y": 0
+                },
+                "id": 6,
+                "options": {
+                    "barRadius": 0,
+                    "barWidth": 0.97,
+                    "fullHighlight": false,
+                    "groupWidth": 0.7,
+                    "legend": {
+                        "calcs": [],
+                        "displayMode": "list",
+                        "placement": "bottom",
+                        "showLegend": true
+                    },
+                    "orientation": "auto",
+                    "showValue": "auto",
+                    "stacking": "none",
+                    "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                    },
+                    "xField": "Godzina",
+                    "xTickLabelRotation": 0,
+                    "xTickLabelSpacing": 0
+                },
+                "pluginVersion": "11.4.0",
+                "targets": [
+                    {
+                        "editorMode": "code",
+                        "format": "table",
+                        "rawQuery": true,
+                        "rawSql": "SELECT\r\n  EXTRACT(hour FROM created_at)::int AS \"Godzina\",\r\n  avg((data->>'czas_min')::float) AS \"\u015aredni czas (min)\"\r\nFROM commute_events\r\nWHERE EXTRACT(dow FROM created_at) BETWEEN 1 AND 5\r\nGROUP BY EXTRACT(hour FROM created_at)\r\nORDER BY \"Godzina\"",
+                        "refId": "A",
+                        "sql": {
+                            "columns": [
+                                {
+                                    "parameters": [],
+                                    "type": "function"
+                                }
+                            ],
+                            "groupBy": [
+                                {
+                                    "property": {
+                                        "type": "string"
+                                    },
+                                    "type": "groupBy"
+                                }
+                            ],
+                            "limit": 50
+                        }
+                    }
+                ],
+                "title": "Sredni czas dojazdu Radzisz\u00f3w - Pod\u0142\u0119\u017c\u0119 - dni robocze",
+                "type": "barchart"
+            },
+            {
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "PCC52D03280B7034C"
+                },
+                "fieldConfig": {
+                    "defaults": {
+                        "color": {
+                            "mode": "palette-classic"
+                        },
+                        "custom": {
+                            "axisBorderShow": false,
+                            "axisCenteredZero": false,
+                            "axisColorMode": "text",
+                            "axisLabel": "",
+                            "axisPlacement": "auto",
+                            "fillOpacity": 80,
+                            "gradientMode": "none",
+                            "hideFrom": {
+                                "legend": false,
+                                "tooltip": false,
+                                "viz": false
+                            },
+                            "lineWidth": 1,
+                            "scaleDistribution": {
+                                "type": "linear"
+                            },
+                            "thresholdsStyle": {
+                                "mode": "off"
+                            }
+                        },
+                        "mappings": [],
+                        "thresholds": {
+                            "mode": "absolute",
+                            "steps": [
+                                {
+                                    "color": "green",
+                                    "value": null
+                                },
+                                {
+                                    "color": "red",
+                                    "value": 80
+                                }
+                            ]
+                        }
+                    },
+                    "overrides": []
+                },
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 0
+                },
+                "id": 7,
+                "options": {
+                    "barRadius": 0,
+                    "barWidth": 0.97,
+                    "fullHighlight": false,
+                    "groupWidth": 0.7,
+                    "legend": {
+                        "calcs": [],
+                        "displayMode": "list",
+                        "placement": "bottom",
+                        "showLegend": true
+                    },
+                    "orientation": "auto",
+                    "showValue": "auto",
+                    "stacking": "none",
+                    "tooltip": {
+                        "mode": "single",
+                        "sort": "none"
+                    },
+                    "xField": "Godzina",
+                    "xTickLabelRotation": 0,
+                    "xTickLabelSpacing": 0
+                },
+                "pluginVersion": "11.4.0",
+                "targets": [
+                    {
+                        "editorMode": "code",
+                        "format": "table",
+                        "rawQuery": true,
+                        "rawSql": "SELECT\r\n  EXTRACT(hour FROM created_at)::int AS \"Godzina\",\r\n  avg((data->>'czas_min')::float) AS \"\u015aredni czas (min)\"\r\nFROM commute_events\r\nWHERE EXTRACT(dow FROM created_at) IN (0, 6)\r\nGROUP BY EXTRACT(hour FROM created_at)\r\nORDER BY \"Godzina\"",
+                        "refId": "A",
+                        "sql": {
+                            "columns": [
+                                {
+                                    "parameters": [],
+                                    "type": "function"
+                                }
+                            ],
+                            "groupBy": [
+                                {
+                                    "property": {
+                                        "type": "string"
+                                    },
+                                    "type": "groupBy"
+                                }
+                            ],
+                            "limit": 50
+                        }
+                    }
+                ],
+                "title": "Sredni czas dojazdu Radzisz\u00f3w - Pod\u0142\u0119\u017c\u0119 - weekend",
+                "type": "barchart"
+            },
+            {
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "PCC52D03280B7034C"
+                },
+                "fieldConfig": {
+                    "defaults": {
+                        "color": {
                             "mode": "thresholds"
                         },
                         "mappings": [],
@@ -95,7 +309,7 @@
                     "h": 8,
                     "w": 12,
                     "x": 0,
-                    "y": 0
+                    "y": 8
                 },
                 "id": 5,
                 "options": {
@@ -153,6 +367,89 @@
                         "color": {
                             "mode": "thresholds"
                         },
+                        "mappings": [],
+                        "thresholds": {
+                            "mode": "absolute",
+                            "steps": [
+                                {
+                                    "color": "green",
+                                    "value": null
+                                },
+                                {
+                                    "color": "#EAB839",
+                                    "value": 25
+                                },
+                                {
+                                    "color": "red",
+                                    "value": 50
+                                }
+                            ]
+                        }
+                    },
+                    "overrides": []
+                },
+                "gridPos": {
+                    "h": 8,
+                    "w": 12,
+                    "x": 12,
+                    "y": 8
+                },
+                "id": 2,
+                "options": {
+                    "minVizHeight": 75,
+                    "minVizWidth": 75,
+                    "orientation": "auto",
+                    "reduceOptions": {
+                        "calcs": [
+                            "lastNotNull"
+                        ],
+                        "fields": "",
+                        "values": true
+                    },
+                    "showThresholdLabels": false,
+                    "showThresholdMarkers": true,
+                    "sizing": "auto"
+                },
+                "pluginVersion": "11.4.0",
+                "targets": [
+                    {
+                        "editorMode": "code",
+                        "format": "table",
+                        "rawQuery": true,
+                        "rawSql": "SELECT\r\n  data->>'nazwa' AS metric,\r\n  ROUND(AVG((data->>'poziom_korkow')::numeric) * 100) AS \"poziom_korkow\"\r\nFROM traffic_events\r\nWHERE created_at > NOW() - INTERVAL '10 minutes'\r\nGROUP BY data->>'nazwa'",
+                        "refId": "A",
+                        "sql": {
+                            "columns": [
+                                {
+                                    "parameters": [],
+                                    "type": "function"
+                                }
+                            ],
+                            "groupBy": [
+                                {
+                                    "property": {
+                                        "type": "string"
+                                    },
+                                    "type": "groupBy"
+                                }
+                            ],
+                            "limit": 50
+                        }
+                    }
+                ],
+                "title": "Poziom kork\u00f3w",
+                "type": "gauge"
+            },
+            {
+                "datasource": {
+                    "type": "grafana-postgresql-datasource",
+                    "uid": "PCC52D03280B7034C"
+                },
+                "fieldConfig": {
+                    "defaults": {
+                        "color": {
+                            "mode": "thresholds"
+                        },
                         "custom": {
                             "hideFrom": {
                                 "legend": false,
@@ -185,7 +482,7 @@
                     "h": 24,
                     "w": 12,
                     "x": 0,
-                    "y": 0
+                    "y": 16
                 },
                 "id": 4,
                 "options": {
@@ -297,89 +594,6 @@
                 "fieldConfig": {
                     "defaults": {
                         "color": {
-                            "mode": "thresholds"
-                        },
-                        "mappings": [],
-                        "thresholds": {
-                            "mode": "absolute",
-                            "steps": [
-                                {
-                                    "color": "green",
-                                    "value": null
-                                },
-                                {
-                                    "color": "#EAB839",
-                                    "value": 25
-                                },
-                                {
-                                    "color": "red",
-                                    "value": 50
-                                }
-                            ]
-                        }
-                    },
-                    "overrides": []
-                },
-                "gridPos": {
-                    "h": 8,
-                    "w": 12,
-                    "x": 12,
-                    "y": 0
-                },
-                "id": 2,
-                "options": {
-                    "minVizHeight": 75,
-                    "minVizWidth": 75,
-                    "orientation": "auto",
-                    "reduceOptions": {
-                        "calcs": [
-                            "lastNotNull"
-                        ],
-                        "fields": "",
-                        "values": true
-                    },
-                    "showThresholdLabels": false,
-                    "showThresholdMarkers": true,
-                    "sizing": "auto"
-                },
-                "pluginVersion": "11.4.0",
-                "targets": [
-                    {
-                        "editorMode": "code",
-                        "format": "table",
-                        "rawQuery": true,
-                        "rawSql": "SELECT\r\n  data->>'nazwa' AS metric,\r\n  ROUND(AVG((data->>'poziom_korkow')::numeric) * 100) AS \"poziom_korkow\"\r\nFROM traffic_events\r\nWHERE created_at > NOW() - INTERVAL '10 minutes'\r\nGROUP BY data->>'nazwa'",
-                        "refId": "A",
-                        "sql": {
-                            "columns": [
-                                {
-                                    "parameters": [],
-                                    "type": "function"
-                                }
-                            ],
-                            "groupBy": [
-                                {
-                                    "property": {
-                                        "type": "string"
-                                    },
-                                    "type": "groupBy"
-                                }
-                            ],
-                            "limit": 50
-                        }
-                    }
-                ],
-                "title": "Poziom kork\u00f3w",
-                "type": "gauge"
-            },
-            {
-                "datasource": {
-                    "type": "grafana-postgresql-datasource",
-                    "uid": "PCC52D03280B7034C"
-                },
-                "fieldConfig": {
-                    "defaults": {
-                        "color": {
                             "mode": "palette-classic"
                         },
                         "custom": {
@@ -436,7 +650,7 @@
                     "h": 8,
                     "w": 12,
                     "x": 12,
-                    "y": 8
+                    "y": 16
                 },
                 "id": 1,
                 "options": {
@@ -523,7 +737,7 @@
                     "h": 8,
                     "w": 12,
                     "x": 12,
-                    "y": 16
+                    "y": 24
                 },
                 "id": 3,
                 "options": {
@@ -583,7 +797,7 @@
         "timepicker": {},
         "timezone": "browser",
         "title": "Krak\u00f3w - ruch i korki",
-        "uid": "afgatmq2o4kcge",
+        "uid": "cfh2l3zlwjgu8a",
         "version": 2,
         "weekStart": ""
     }
