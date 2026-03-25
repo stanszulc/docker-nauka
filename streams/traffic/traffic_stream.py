@@ -6,11 +6,13 @@ from kafka import KafkaProducer
 
 # Punkty pomiarowe w Krakowie
 PUNKTY = [
-    {"nazwa": "Rondo Grunwaldzkie", "lat": 50.0574, "lon": 19.9425},
+    
     {"nazwa": "Al. Krasińskiego",   "lat": 50.0614, "lon": 19.9269},
     {"nazwa": "Rondo Mogilskie",    "lat": 50.0647, "lon": 19.9495},
-    {"nazwa": "ul. Lubicz",         "lat": 50.0629, "lon": 19.9468},
+
     {"nazwa": "Rondo Ofiar Katynia","lat": 50.0702, "lon": 19.9001},
+    {"nazwa": "A4 Balice", "lat": 50.089, "lon": 19.771},
+    {"nazwa": "A4 Wieliczka", "lat": 49.999, "lon": 20.055},
 ]
 
 API_KEY = "UhkLbIJMhz9LagyQ1BYlLDyPyaLag6Lx"
