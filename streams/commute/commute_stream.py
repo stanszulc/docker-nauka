@@ -4,13 +4,17 @@ import requests
 from datetime import datetime
 from kafka import KafkaProducer
 
-START = {"lat": 49.9712, "lon": 19.8423}
-KONIEC = {"lat": 49.9980, "lon": 20.0900}
+START_LAT = 49.9712
+START_LON = 19.8423
+KONIEC_LAT = 49.9980
+KONIEC_LON = 20.0900
 
-OSRM_URL = (
-    f"http://router.project-osrm.org/route/v1/driving/"
-    f"{START['lon']},{START['lat']};{KONIEC['lon']},{KONIEC['lat']}"
-    f"?overview=false"
+API_KEY = "olDzucBAob8qXdWEsOdHUlecy1Wjg2xW"
+
+TOMTOM_URL = (
+    f"https://api.tomtom.com/routing/1/calculateRoute/"
+    f"{START_LAT},{START_LON}:{KONIEC_LAT},{KONIEC_LON}/json"
+    f"?traffic=true&travelMode=car&key={API_KEY}"
 )
 
 while True:
@@ -27,24 +31,28 @@ while True:
 
 while True:
     try:
-        r = requests.get(OSRM_URL, timeout=5)
+        r = requests.get(TOMTOM_URL, timeout=5)
         data = r.json()
-        route = data["routes"][0]
-        czas_s = route["duration"]
-        dystans_m = route["distance"]
+
+        route = data["routes"][0]["summary"]
+        czas_s = route["travelTimeInSeconds"]
+        czas_free_s = route["noTrafficTravelTimeInSeconds"]
+        dystans_m = route["lengthInMeters"]
 
         event = {
             "trasa": "Radziszów PKP → Podłęże A4",
-            "czas_min": round(czas_s / 60, 1),
+            "czas_min": round(czas_s / 60, 2),
+            "czas_free_min": round(czas_free_s / 60, 2),
+            "opoznienie_min": round((czas_s - czas_free_s) / 60, 2),
             "dystans_km": round(dystans_m / 1000, 2),
             "timestamp": str(datetime.now()),
         }
 
         producer.send('commute_events', event)
         producer.flush()
-        print(f"✅ Czas dojazdu: {event['czas_min']} min | {event['dystans_km']} km")
+        print(f"✅ Czas: {event['czas_min']} min | free: {event['czas_free_min']} min | opóźnienie: {event['opoznienie_min']} min")
 
     except Exception as e:
-        print(f"❌ Błąd OSRM: {e}")
+        print(f"❌ Błąd TomTom: {e}")
 
-    time.sleep(60)
+    time.sleep(300)  # co 5 minut = 288 requestów dziennie
