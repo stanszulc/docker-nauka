@@ -18,10 +18,9 @@ def pobierz_dane():
         port=5432
     )
     wczoraj = (datetime.now() - timedelta(days=1)).date()
-    
     with conn.cursor() as cur:
         cur.execute("""
-            SELECT 
+            SELECT
                 data->>'kierunek',
                 EXTRACT(hour FROM created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw')::int,
                 avg((data->>'czas_min')::float),
@@ -34,67 +33,56 @@ def pobierz_dane():
             ORDER BY data->>'kierunek', 2
         """, (wczoraj,))
         rows = cur.fetchall()
-    
     conn.close()
     return rows, wczoraj
 
 def generuj_raport():
-    print(f"⏰ Generuję raport: {datetime.now()}")
-    
+    print(f"Generuje raport: {datetime.now()}")
     rows, data = pobierz_dane()
-    
     if not rows:
-        print("⚠️ Brak danych za wczoraj")
+        print("Brak danych za wczoraj")
         return
 
-    # Formatuj dane dla Gemini
-    dane_txt = f"Dane o ruchu dla trasy Radziszów ↔ Podłęże za dzień {data}:\n\n"
+    dane_txt = f"Dane o ruchu dla trasy Radziszow - Podleze za dzien {data}:\n\n"
     for row in rows:
         kierunek, godzina, avg_czas, avg_opoznienie, max_czas = row
         dane_txt += (
             f"Kierunek: {kierunek}, Godzina: {godzina}:00, "
-            f"Średni czas: {round(avg_czas, 1)} min, "
-            f"Średnie opóźnienie: {round(avg_opoznienie, 1)} min, "
+            f"Sredni czas: {round(avg_czas, 1)} min, "
+            f"Srednie opoznienie: {round(avg_opoznienie, 1)} min, "
             f"Maks. czas: {round(max_czas, 1)} min\n"
         )
 
     prompt = f"""
-Jesteś asystentem analizującym dane o ruchu drogowym.
-Na podstawie poniższych danych napisz dzienny raport w języku polskim.
+Jestes asystentem analizujacym dane o ruchu drogowym.
+Na podstawie ponizszych danych napisz dzienny raport w jezyku polskim.
 
-Raport powinien zawierać:
-1. Ogólne podsumowanie dnia
-2. Analizę dojazdu do pracy (rano) - kiedy były korki, jak długo trwał przejazd
-3. Analizę powrotu z pracy (popołudnie/wieczór)
+Raport powinien zawierac:
+1. Ogolne podsumowanie dnia
+2. Analize dojazdu do pracy (rano) - kiedy byly korki, jak dlugo trwal przejazd
+3. Analize powrotu z pracy (popoludnie/wieczor)
 4. Najgorszy moment dnia
-5. Krótką rekomendację na jutro (o której najlepiej wyjeżdżać)
+5. Krotka rekomendacje na jutro (o ktorej najlepiej wyjezdzac)
 
-Pisz naturalnie, jak człowiek - nie jak tabela danych.
+Pisz naturalnie, jak czlowiek - nie jak tabela danych.
 
 {dane_txt}
 """
 
     response = model.generate_content(prompt)
     raport = response.text
-    
+
     print("\n" + "="*60)
     print(f"RAPORT DZIENNY - {data}")
     print("="*60)
     print(raport)
     print("="*60 + "\n")
 
-# Uruchom od razu przy starcie (do testów)
 generuj_raport()
 
-# Harmonogram - codziennie o 7:00
 schedule.every().day.at("07:00").do(generuj_raport)
 
-print("✅ Agent uruchomiony, czeka na 7:00...")
+print("Agent uruchomiony, czeka na 7:00...")
 while True:
     schedule.run_pending()
     time.sleep(60)
-
-Dodaj `schedule` do `requirements.txt`:
-psycopg2-binary
-google-generativeai
-schedule
