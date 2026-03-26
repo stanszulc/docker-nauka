@@ -1,13 +1,12 @@
 import os
 import psycopg2
-import google.generativeai as genai
+from google import genai
 from datetime import datetime, timedelta
 import schedule
 import time
 
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
-genai.configure(api_key=GEMINI_API_KEY)
-model = genai.GenerativeModel("gemini-1.5-flash")
+client = genai.Client(api_key=GEMINI_API_KEY)
 
 def pobierz_dane():
     conn = psycopg2.connect(
@@ -59,17 +58,17 @@ Na podstawie ponizszych danych napisz dzienny raport w jezyku polskim.
 
 Raport powinien zawierac:
 1. Ogolne podsumowanie dnia
-2. Analize dojazdu do pracy (rano) - kiedy byly korki, jak dlugo trwal przejazd
+2. Analize dojazdu do pracy (rano)
 3. Analize powrotu z pracy (popoludnie/wieczor)
 4. Najgorszy moment dnia
-5. Krotka rekomendacje na jutro (o ktorej najlepiej wyjezdzac)
+5. Krotka rekomendacje na jutro
 
 Pisz naturalnie, jak czlowiek - nie jak tabela danych.
 
 {dane_txt}
 """
 
-    response = model.generate_content(prompt)
+    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
     raport = response.text
 
     print("\n" + "="*60)
