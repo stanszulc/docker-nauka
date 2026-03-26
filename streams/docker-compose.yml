@@ -113,7 +113,14 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json
-
+  agent_raport:
+    build: ./agent_raport
+    container_name: agent_raport
+    depends_on:
+      - postgres
+    environment:
+      - GEMINI_API_KEY=AIzaSyCcQPzQZB6gE2zlRZOaStqp8myiVGbKz1k
+    restart: on-failure
 volumes:
   postgres_data:
   grafana_data:
