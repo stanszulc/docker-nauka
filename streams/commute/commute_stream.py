@@ -14,7 +14,7 @@ API_KEY = "olDzucBAob8qXdWEsOdHUlecy1Wjg2xW"
 TOMTOM_URL = (
     f"https://api.tomtom.com/routing/1/calculateRoute/"
     f"{START_LAT},{START_LON}:{KONIEC_LAT},{KONIEC_LON}/json"
-    f"?traffic=true&travelMode=car&key={API_KEY}"
+    f"?traffic=true&travelMode=car&computeTravelTimeFor=all&key={API_KEY}"
 )
 
 while True:
@@ -32,11 +32,12 @@ while True:
 while True:
     try:
         r = requests.get(TOMTOM_URL, timeout=5)
+        r.raise_for_status()
         data = r.json()
 
         route = data["routes"][0]["summary"]
         czas_s = route["travelTimeInSeconds"]
-        czas_free_s = route["noTrafficTravelTimeInSeconds"]
+        czas_free_s = route.get("noTrafficTravelTimeInSeconds", czas_s)
         dystans_m = route["lengthInMeters"]
 
         event = {
@@ -52,7 +53,11 @@ while True:
         producer.flush()
         print(f"✅ Czas: {event['czas_min']} min | free: {event['czas_free_min']} min | opóźnienie: {event['opoznienie_min']} min")
 
+    except KeyError as e:
+        print(f"❌ Brak pola w odpowiedzi TomTom: {e}")
+    except requests.exceptions.RequestException as e:
+        print(f"❌ Błąd HTTP: {e}")
     except Exception as e:
-        print(f"❌ Błąd TomTom: {e}")
+        print(f"❌ Nieoczekiwany błąd: {e}")
 
-    time.sleep(300)  # co 5 minut = 288 requestów dziennie
+    time.sleep(300)
