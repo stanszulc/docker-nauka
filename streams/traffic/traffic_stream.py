@@ -11,8 +11,9 @@ PUNKTY = [
     {"nazwa": "Rondo Mogilskie",    "lat": 50.0647, "lon": 19.9495},
 
     {"nazwa": "Rondo Ofiar Katynia","lat": 50.0702, "lon": 19.9001},
-    {"nazwa": "A4 Balice", "lat": 50.089, "lon": 19.771},
-    {"nazwa": "A4 Wieliczka", "lat": 49.999, "lon": 20.055},
+    
+    {"nazwa": "A4 Balice",   "lat": 50.0834, "lon": 19.7913},
+    {"nazwa": "A4 Podłęże",  "lat": 50.0136, "lon": 20.1502},
 ]
 
 API_KEY = "UhkLbIJMhz9LagyQ1BYlLDyPyaLag6Lx"
