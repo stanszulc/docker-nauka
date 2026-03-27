@@ -36,7 +36,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, SUM((data->>'amount')::float) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
           "format": "table"
         }
@@ -68,7 +68,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, COUNT(*) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
           "format": "table"
         }
@@ -99,7 +99,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, COUNT(DISTINCT (data->>'user_id')) AS value FROM click_events WHERE created_at > NOW() - INTERVAL '5 minutes'",
           "format": "table"
         }
@@ -132,7 +132,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, AVG((data->>'amount')::float) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
           "format": "table"
         }
@@ -166,7 +166,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, ROUND(100.0 * COUNT(DISTINCT p.id) / NULLIF(COUNT(DISTINCT c.id), 0), 2) AS value FROM click_events c LEFT JOIN purchase_events p ON p.created_at BETWEEN c.created_at - INTERVAL '30 minutes' AND c.created_at + INTERVAL '30 minutes' AND (p.data->>'user_id') = (c.data->>'user_id') WHERE c.created_at > NOW() - INTERVAL '1 hour'",
           "format": "table"
         }
@@ -199,7 +199,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, ROUND(1.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'), 0), 1) AS value FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour'",
           "format": "table"
         }
@@ -228,7 +228,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, SUM((data->>'amount')::float) AS \"Revenue\" FROM purchase_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series"
         }
@@ -255,12 +255,12 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Clicks\" FROM click_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series"
         },
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Logins\" FROM login_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
           "format": "time_series"
         }
@@ -297,7 +297,7 @@
       "fieldConfig": { "defaults": {}, "overrides": [] },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT created_at AS time, (data->'gps'->>'lat')::float AS lat, (data->'gps'->>'lon')::float AS lon, (data->>'amount')::float AS amount FROM purchase_events WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 500",
           "format": "table"
         }
@@ -326,7 +326,7 @@
       },
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "eshop-pg" },
+          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
           "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM login_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Logins\", (SELECT COUNT(*) FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Clicks\", (SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Purchases\"",
           "format": "table"
         }
