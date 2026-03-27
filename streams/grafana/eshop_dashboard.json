@@ -701,7 +701,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT \r\n  timestamp AS time,\r\n  price_factor AS \"Price Factor\"\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp)\r\n  AND agent_id = 'agent_sql'\r\nORDER BY timestamp",
+          "rawSql": "SELECT\r\n  date_trunc('minute', created_at) AS time,\r\n  AVG(SUM((data->>'amount')::float)) OVER (\r\n    ORDER BY date_trunc('minute', created_at)\r\n    ROWS BETWEEN 4 PRECEDING AND CURRENT ROW\r\n  ) AS revenue_trend\r\nFROM purchase_events\r\nWHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz\r\nGROUP BY 1\r\nORDER BY 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -722,7 +722,7 @@
           }
         }
       ],
-      "title": "Panel Title",
+      "title": "Purchase Revenue 5min avg · Agent input",
       "type": "timeseries"
     },
     {
@@ -817,113 +817,70 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
-      },
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "mode": "continuous-BlPu"
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
               {
-                "color": "green",
+                "color": "blue",
                 "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
               }
             ]
-          }
+          },
+          "unit": "short"
         },
         "overrides": []
       },
       "gridPos": {
-        "h": 8,
+        "h": 9,
         "w": 12,
         "x": 12,
         "y": 12
       },
-      "id": 11,
+      "id": 10,
       "options": {
+        "displayMode": "gradient",
         "legend": {
           "calcs": [],
           "displayMode": "list",
           "placement": "bottom",
-          "showLegend": true
+          "showLegend": false
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
       },
       "pluginVersion": "11.4.0",
       "targets": [
         {
-          "editorMode": "code",
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
           "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT \r\n  date_trunc('minute', created_at) AS time,\r\n  COUNT(*) AS \"Purchases\"\r\nFROM purchase_events \r\nWHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz \r\nGROUP BY 1 \r\nORDER BY 1",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
+          "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM login_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Logins\", (SELECT COUNT(*) FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Clicks\", (SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Purchases\"",
+          "refId": "A"
         }
       ],
-      "title": "Purchase (event/minute)",
-      "type": "timeseries"
+      "title": "📋 Conversion Funnel: Login → Click → Purchase",
+      "type": "bargauge"
     },
     {
       "fieldConfig": {
@@ -953,10 +910,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 19,
-        "w": 12,
+        "h": 20,
+        "w": 24,
         "x": 0,
-        "y": 20
+        "y": 21
       },
       "id": 9,
       "options": {
@@ -1016,76 +973,10 @@
       ],
       "title": "🗺️ Purchase Locations",
       "type": "geomap"
-    },
-    {
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "continuous-BlPu"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 12,
-        "x": 12,
-        "y": 20
-      },
-      "id": 10,
-      "options": {
-        "displayMode": "gradient",
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": false
-        },
-        "maxVizHeight": 300,
-        "minVizHeight": 16,
-        "minVizWidth": 8,
-        "namePlacement": "auto",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showUnfilled": true,
-        "sizing": "auto",
-        "valueMode": "color"
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "table",
-          "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM login_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Logins\", (SELECT COUNT(*) FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Clicks\", (SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Purchases\"",
-          "refId": "A"
-        }
-      ],
-      "title": "📋 Conversion Funnel: Login → Click → Purchase",
-      "type": "bargauge"
     }
   ],
   "preload": false,
-  "refresh": "1m",
+  "refresh": "5m",
   "schemaVersion": 40,
   "tags": [
     "eshop",
@@ -1095,13 +986,13 @@
     "list": []
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "utc",
+  "timezone": "Europe/Warsaw",
   "title": "E-SHOP Activity Monitor",
   "uid": "eshop-monitor",
-  "version": 14,
+  "version": 17,
   "weekStart": ""
 }
