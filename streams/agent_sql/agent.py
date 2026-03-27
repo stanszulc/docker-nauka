@@ -21,7 +21,8 @@ def create_table():
                 revenue_15min FLOAT,
                 active_users INT,
                 price_factor FLOAT,
-                reasoning TEXT
+                reasoning TEXT,
+                agent_id VARCHAR(20)
             )
         """)
     conn.commit()
@@ -34,19 +35,19 @@ def pobierz_sygnaly():
         cur.execute("""
             SELECT
                 (SELECT COUNT(*) FROM click_events
-                 WHERE created_at > NOW() - INTERVAL '15 minutes') AS clicks,
+                 WHERE created_at > NOW() - INTERVAL '5 minutes') AS clicks,
                 (SELECT COUNT(*) FROM purchase_events
-                 WHERE created_at > NOW() - INTERVAL '15 minutes') AS purchases,
+                 WHERE created_at > NOW() - INTERVAL '5 minutes') AS purchases,
                 (SELECT COALESCE(SUM((data->>'amount')::float), 0)
                  FROM purchase_events
-                 WHERE created_at > NOW() - INTERVAL '15 minutes') AS revenue,
+                 WHERE created_at > NOW() - INTERVAL '5 minutes') AS revenue,
                 (SELECT COUNT(DISTINCT (data->>'user_id'))
                  FROM click_events
-                 WHERE created_at > NOW() - INTERVAL '15 minutes') AS active_users,
+                 WHERE created_at > NOW() - INTERVAL '5 minutes') AS active_users,
                 (SELECT COALESCE(SUM((data->>'amount')::float), 0)
                  FROM purchase_events
-                 WHERE created_at > NOW() - INTERVAL '30 minutes'
-                   AND created_at <= NOW() - INTERVAL '15 minutes') AS revenue_prev
+                 WHERE created_at > NOW() - INTERVAL '10 minutes'
+                   AND created_at <= NOW() - INTERVAL '5 minutes') AS revenue_prev
         """)
         row = cur.fetchone()
     conn.close()
@@ -65,12 +66,10 @@ def pobierz_sygnaly():
         "conversion_rate": conversion_rate
     }
 
-
-
 def podejmij_decyzje(s):
-    if s["revenue_trend_pct"] > 15:
+    if s["revenue_trend_pct"] > 10:
         return "PRICE_UP", 1.2, "Rosnacy przychod - podwyzka cen o 20%"
-    elif s["revenue_trend_pct"] < -15:
+    elif s["revenue_trend_pct"] < -10:
         return "PROMO", 0.8, "Spadajacy przychod - promocja -20%"
     else:
         return "NEUTRAL", 1.0, "Stabilna sytuacja - brak zmian cen"
