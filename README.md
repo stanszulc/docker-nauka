@@ -1,159 +1,187 @@
 # 🏙️ Kraków Traffic Monitor
 
-System monitorowania ruchu ulicznego w czasie rzeczywistym oparty na architekturze event-driven z wykorzystaniem Apache Kafka, PostgreSQL i Grafana.
+A real-time traffic monitoring system built on an event-driven architecture using Apache Kafka, PostgreSQL, and Grafana. Includes an AI agent generating daily traffic reports for the Radziszów ↔ Podłęże commute route.
 
-Generatory login, click oraz purchase służa do testowania dasboardu.
+Login, click, and purchase generators are used for dashboard and  agent AI testing purposes.
 
 ![Dashboard](images/dashboard.png)
+
 ---
 
 ## 📸 Dashboard
 
-> Dashboard Grafana z danymi o ruchu ulicznym w Krakowie w czasie rzeczywistym.
-
+> Grafana dashboard with real-time traffic data from Kraków, Poland.
 
 ---
 
-## 🏗️ Architektura systemu
-
+## 🏗️ System Architecture
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    GENERATORY EVENTÓW                    │
-│  ┌──────────┐  ┌──────────┐  ┌──────────┐  ┌────────┐  │
-│  │  click   │  │  login   │  │ purchase │  │traffic │  │
-│  │ co 3 sek │  │ co 2 sek │  │ co 5 sek │  │co 30s  │  │
-│  └────┬─────┘  └────┬─────┘  └────┬─────┘  └───┬────┘  │
-└───────┼─────────────┼─────────────┼─────────────┼───────┘
-        │             │             │             │
-        ▼             ▼             ▼             ▼
-┌─────────────────────────────────────────────────────────┐
-│                     APACHE KAFKA                         │
-│   click_events  login_events  purchase_events  traffic   │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                      CONSUMER                            │
-│              Python + psycopg2                           │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                    POSTGRESQL                            │
-│   click_events  login_events  purchase_events  traffic   │
-└─────────────────────────┬───────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────┐
-│                      GRAFANA                             │
-│   🗺️ Mapa  🚦 Gauge  📈 Wykres  📋 Tabela              │
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                        EVENT GENERATORS                          │
+│  ┌──────┐  ┌──────┐  ┌────────┐  ┌─────────┐  ┌──────┐ ┌─────┐│
+│  │click │  │login │  │purchase│  │ traffic │  │route │ │comm.││
+│  │ 3s   │  │ 2s   │  │  5s    │  │2min/30m │  │      │ │ 5m  ││
+│  └──┬───┘  └──┬───┘  └───┬────┘  └────┬────┘  └──┬───┘ └──┬──┘│
+└─────┼─────────┼───────────┼────────────┼───────────┼────────┼───┘
+      │         │           │            │           │        │
+      ▼         ▼           ▼            ▼           ▼        ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        APACHE KAFKA                              │
+│  click  login  purchase  traffic_events  route_events  commute  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                          CONSUMER                                │
+│                     Python + psycopg2                            │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+                           ▼
+┌─────────────────────────────────────────────────────────────────┐
+│                        POSTGRESQL                                │
+│  click  login  purchase  traffic_events  route_events  commute  │
+└──────────────────────────┬──────────────────────────────────────┘
+                           │
+              ┌────────────┴────────────┐
+              ▼                         ▼
+┌─────────────────────┐   ┌─────────────────────────────────────┐
+│       GRAFANA        │   │              AI AGENT                │
+│  📈 Time series      │   │  Google Gemini 1.5 Flash            │
+│  🚦 Gauge            │   │  Daily commute traffic report       │
+│  🗺️ Geomap          │   │  Radziszów ↔ Podłęże               │
+│  📋 Table            │   │  Runs daily at 7:00 AM              │
+└─────────────────────┘   └─────────────────────────────────────┘
 ```
 
 ---
 
-## 🛠️ Technologie
+## 🛠️ Tech Stack
 
-| Technologia | Wersja | Zastosowanie |
-|-------------|--------|--------------|
-| Apache Kafka | 7.3.0 | Message broker, przesyłanie eventów |
-| Zookeeper | 7.3.0 | Zarządzanie klastrem Kafka |
-| PostgreSQL | 15 | Przechowywanie danych |
-| Grafana | 11.4.0 | Wizualizacja danych, dashboard |
-| Python | 3.12 | Generatory eventów, consumer |
-| Docker | latest | Konteneryzacja całego systemu |
-| TomTom API | v4 | Dane o ruchu ulicznym w czasie rzeczywistym |
+| Technology | Version | Purpose |
+|------------|---------|---------|
+| Apache Kafka | 7.3.0 | Message broker, event streaming |
+| Zookeeper | 7.3.0 | Kafka cluster management |
+| PostgreSQL | 15 | Data storage |
+| Grafana | 11.4.0 | Data visualization, dashboard |
+| Python | 3.11 | Event generators, consumer, AI agent |
+| Docker | latest | Containerization |
+| TomTom API | v4 | Real-time traffic and routing data |
+| Google Gemini | 1.5 Flash | Natural language report generation |
 
 ---
 
-## 📊 Źródła danych
+## 📊 Data Sources
 
-### Symulowane eventy
-- **click_events** — symulowane kliknięcia użytkowników (co 3 sekundy)
-- **login_events** — symulowane logowania użytkowników (co 2 sekundy)
-- **purchase_events** — symulowane zakupy z kwotą (co 5 sekund)
+### Simulated events
+- **click_events** — simulated user clicks (every 3 seconds)
+- **login_events** — simulated user logins (every 2 seconds)
+- **purchase_events** — simulated purchases with amount (every 5 seconds)
 
-### Prawdziwe dane
-- **traffic_events** — dane o ruchu ulicznym z **TomTom Traffic API** dla 5 punktów pomiarowych w Krakowie (co 30 sekund):
-  - Rondo Grunwaldzkie
+### Real-time data from TomTom API
+- **traffic_events** — traffic data for 5 measurement points in Kraków (every 2 min during the day, every 30 min at night):
   - Al. Krasińskiego
   - Rondo Mogilskie
-  - ul. Lubicz
   - Rondo Ofiar Katynia
+  - A4 Balice
+  - A4 Podłęże
+
+- **commute_events** — travel time for the Radziszów ↔ Podłęże route (every 5 min during the day, every 30 min at night):
+  - Radziszów PKP → Podłęże (morning commute)
+  - Podłęże → Radziszów (evening return)
 
 ---
 
-## 📈 Dashboard Grafana
+## 🤖 AI Agent
 
-Dashboard zawiera 4 panele:
+The agent analyzes the previous day's data and generates a daily report every morning at 7:00 AM including:
 
-| Panel | Typ | Opis |
-|-------|-----|------|
-| 🚗 Prędkość ruchu w Krakowie | Time series | Wykres prędkości km/h dla każdej ulicy w czasie |
-| 🚦 Poziom korków | Gauge | Wskaźnik korków w % z kolorami: 🟢 <25% 🟡 25-50% 🔴 >50% |
-| 📋 Ostatnie eventy | Table | Tabela z ostatnimi pomiarami ruchu |
-| 🗺️ Mapa ruchu Kraków | Geomap | Mapa Krakowa z kolorowymi punktami pomiarowymi |
+- Overall day summary
+- Morning commute analysis (rush hours, delays)
+- Evening return analysis
+- Worst moment of the day
+- Recommendation for tomorrow (optimal departure time)
+
+Reports are generated by **Google Gemini 1.5 Flash** in Polish.
 
 ---
 
-## 🚀 Uruchomienie
+## 📈 Grafana Dashboard
 
-### Wymagania
+| Panel | Type | Description |
+|-------|------|-------------|
+| 🚗 Traffic Speed in Kraków | Time series | Speed in km/h for each measurement point |
+| 🚦 Congestion Level | Gauge | Traffic congestion indicator: 🟢 <25% 🟡 25-50% 🔴 >50% |
+| 📋 Latest Events | Table | Table with most recent measurements |
+| 🗺️ Kraków Traffic Map | Geomap | Map with color-coded measurement points |
+| ⏱️ Commute Time | Time series | Average travel time Radziszów ↔ Podłęże by hour |
+
+---
+
+## 🚀 Getting Started
+
+### Requirements
 - Docker
 - Docker Compose
-- Klucz API TomTom (darmowy: https://developer.tomtom.com)
+- TomTom API key (free: https://developer.tomtom.com)
+- Google Gemini API key (free: https://aistudio.google.com/app/apikey)
 
-### Kroki
+### Steps
 
-1. **Sklonuj repozytorium**
+1. **Clone the repository**
 ```bash
 git clone https://github.com/stanszulc/docker-nauka.git
 cd docker-nauka/streams
 ```
 
-2. **Dodaj klucz TomTom API**
+2. **Add API keys**
 ```bash
-# Edytuj plik traffic/traffic_stream.py
-# Zmień: API_KEY = "TUTAJ_WKLEJ_SWOJ_KLUCZ"
+# Edit traffic/traffic_stream.py and commute/commute_stream.py
+# Set API_KEY = "YOUR_TOMTOM_API_KEY"
+
+# In docker-compose.yml set:
+# GEMINI_API_KEY=YOUR_GEMINI_API_KEY
 ```
 
-3. **Uruchom system**
+3. **Start the system**
 ```bash
 docker-compose up -d
 ```
 
-4. **Otwórz Grafanę**
+4. **Open Grafana**
 ```
 http://localhost:3000
 Login: admin
-Hasło: admin
+Password: admin
 ```
 
-Dashboard załaduje się automatycznie! 🎉
+Dashboard loads automatically! 🎉
 
 ---
 
-## 🔒 Bezpieczeństwo
+## 🔒 Security
 
-- Ochrona przed SQL Injection — weryfikacja nazw tabel przez whitelist
-- Retry loop — generatory i consumer automatycznie wznawiają połączenie po awarii
-- Persistent volumes — dane PostgreSQL i konfiguracja Grafany przeżywają restart
+- SQL Injection prevention — table name validation via allowlist
+- Retry loops — generators and consumer automatically reconnect on failure
+- Persistent volumes — PostgreSQL data and Grafana config survive restarts
+- API keys stored in environment variables, never in code
 
 ---
 
-## 📁 Struktura projektu
-
+## 📁 Project Structure
 ```
 streams/
-├── click/              # Generator eventów click
-├── login/              # Generator eventów login
-├── purchase/           # Generator eventów purchase
-├── traffic/            # Generator danych TomTom API
-├── consumer/           # Consumer Kafka → PostgreSQL
+├── agent_raport/       # AI agent — daily traffic report
+├── click/              # Click event generator
+├── login/              # Login event generator
+├── purchase/           # Purchase event generator
+├── traffic/            # TomTom API — 5 measurement points
+├── commute/            # TomTom API — Radziszów ↔ Podłęże travel time
+├── route/              # Route event generator
+├── consumer/           # Kafka → PostgreSQL consumer
 ├── grafana/
-│   ├── dashboard.json  # Backup dashboardu
-│   └── provisioning/   # Automatyczna konfiguracja Grafany
+│   ├── dashboard.json  # Dashboard backup
+│   └── provisioning/   # Automatic Grafana configuration
 │       ├── datasources/
 │       └── dashboards/
 └── docker-compose.yml
-```# docker-nauka
+```
