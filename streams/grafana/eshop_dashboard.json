@@ -11,6 +11,12 @@
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
+        "target": {
+          "limit": 100,
+          "matchAny": false,
+          "tags": [],
+          "type": "dashboard"
+        },
         "type": "dashboard"
       },
       {
@@ -21,12 +27,46 @@
         "enable": true,
         "hide": false,
         "iconColor": "red",
-        "name": "Agent Decisions",
+        "name": "PRICE_UP",
         "target": {
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  timestamp AS time,\r\n  decision AS text,\r\n  ARRAY[decision, agent_id] AS tags\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp)\r\n  AND agent_id = 'agent_sql'\r\n  AND decision != 'NEUTRAL'\r\nORDER BY timestamp",
+          "rawSql": "SELECT timestamp AS time, decision AS text, ARRAY[decision] AS tags\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp) AND agent_id = 'agent_sql' AND decision = 'PRICE_UP'\r\nORDER BY timestamp",
+          "refId": "Anno",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      },
+      {
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "PCC52D03280B7034C"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "green",
+        "name": "PROMO",
+        "target": {
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT timestamp AS time, decision AS text, ARRAY[decision] AS tags\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp) AND agent_id = 'agent_sql' AND decision = 'PROMO'\r\nORDER BY timestamp",
           "refId": "Anno",
           "sql": {
             "columns": [
@@ -455,6 +495,237 @@
       "type": "gauge"
     },
     {
+      "datasource": {
+        "type": "grafana-postgresql-datasource"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('minute', created_at) AS time, COUNT(*) AS \"Clicks\" FROM click_events WHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('minute', created_at) AS time, COUNT(*) AS \"Logins\" FROM login_events WHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
+          "refId": "B"
+        }
+      ],
+      "title": "👆 User Activity (clicks & logins per minute)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 12,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \r\n  timestamp AS time,\r\n  price_factor AS \"Price Factor\"\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp)\r\n  AND agent_id = 'agent_sql'\r\nORDER BY timestamp",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Panel Title",
+      "type": "timeseries"
+    },
+    {
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -515,7 +786,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 4
+        "y": 12
       },
       "id": 7,
       "options": {
@@ -538,7 +809,7 @@
             "uid": "PCC52D03280B7034C"
           },
           "format": "time_series",
-          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, SUM((data->>'amount')::float) AS \"Revenue\" FROM purchase_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "rawSql": "SELECT date_trunc('minute', created_at) AS time, SUM((data->>'amount')::float) AS \"Revenue\" FROM purchase_events WHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz GROUP BY 1 ORDER BY 1",
           "refId": "A"
         }
       ],
@@ -546,6 +817,10 @@
       "type": "timeseries"
     },
     {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PCC52D03280B7034C"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -560,7 +835,7 @@
             "barAlignment": 0,
             "barWidthFactor": 0.6,
             "drawStyle": "line",
-            "fillOpacity": 10,
+            "fillOpacity": 0,
             "gradientMode": "none",
             "hideFrom": {
               "legend": false,
@@ -569,7 +844,7 @@
             },
             "insertNulls": false,
             "lineInterpolation": "linear",
-            "lineWidth": 2,
+            "lineWidth": 1,
             "pointSize": 5,
             "scaleDistribution": {
               "type": "linear"
@@ -597,8 +872,7 @@
                 "value": 80
               }
             ]
-          },
-          "unit": "short"
+          }
         },
         "overrides": []
       },
@@ -606,9 +880,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 4
+        "y": 12
       },
-      "id": 8,
+      "id": 11,
       "options": {
         "legend": {
           "calcs": [],
@@ -617,32 +891,38 @@
           "showLegend": true
         },
         "tooltip": {
-          "mode": "multi",
+          "mode": "single",
           "sort": "none"
         }
       },
       "pluginVersion": "11.4.0",
       "targets": [
         {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Clicks\" FROM click_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Logins\" FROM login_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "refId": "B"
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT \r\n  date_trunc('minute', created_at) AS time,\r\n  COUNT(*) AS \"Purchases\"\r\nFROM purchase_events \r\nWHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz \r\nGROUP BY 1 \r\nORDER BY 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
         }
       ],
-      "title": "👆 User Activity (clicks & logins per minute)",
+      "title": "Purchase (event/minute)",
       "type": "timeseries"
     },
     {
@@ -673,10 +953,10 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 9,
+        "h": 19,
         "w": 12,
         "x": 0,
-        "y": 12
+        "y": 20
       },
       "id": 9,
       "options": {
@@ -730,7 +1010,7 @@
             "uid": "PCC52D03280B7034C"
           },
           "format": "table",
-          "rawSql": "SELECT created_at AS time, (data->'gps'->>'lat')::float AS lat, (data->'gps'->>'lon')::float AS lon, (data->>'amount')::float AS amount FROM purchase_events WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 500",
+          "rawSql": "SELECT created_at AS time, (data->'gps'->>'lat')::float AS lat, (data->'gps'->>'lon')::float AS lon, (data->>'amount')::float AS amount FROM purchase_events WHERE created_at >= $__timeFrom()::timestamptz AND created_at < $__timeTo()::timestamptz ORDER BY created_at DESC LIMIT 500",
           "refId": "A"
         }
       ],
@@ -761,7 +1041,7 @@
         "h": 9,
         "w": 12,
         "x": 12,
-        "y": 12
+        "y": 20
       },
       "id": 10,
       "options": {
@@ -805,7 +1085,7 @@
     }
   ],
   "preload": false,
-  "refresh": "30s",
+  "refresh": "1m",
   "schemaVersion": 40,
   "tags": [
     "eshop",
@@ -815,13 +1095,13 @@
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-3h",
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "Europe/Warsaw",
+  "timezone": "utc",
   "title": "E-SHOP Activity Monitor",
   "uid": "eshop-monitor",
-  "version": 4,
+  "version": 14,
   "weekStart": ""
 }
