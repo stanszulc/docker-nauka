@@ -130,6 +130,13 @@ services:
     environment:
       - GEMINI_API_KEY=AIzaSyB9P1gdI1SpUPOzGBkjhA-YyHhRWp2bsQc
     restart: on-failure
+
+  agent_sql:
+    build: ./agent_sql
+    container_name: agent_sql
+    depends_on:
+      - postgres
+    restart: on-failure
 volumes:
   postgres_data:
   grafana_data:
