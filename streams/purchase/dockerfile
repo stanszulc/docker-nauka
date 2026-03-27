@@ -3,4 +3,4 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 COPY purchase_stream.py .
-CMD ["python", "purchase_stream.py"]
+CMD ["python", "-u", "purchase_stream.py"]
