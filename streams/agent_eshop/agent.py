@@ -150,7 +150,7 @@ Odpowiedz TYLKO w formacie JSON:
 create_table()
 analizuj()
 
-schedule.every(5).minutes.do(analizuj)
+schedule.every(1).hours.do(analizuj)
 
 print("\nAgent e-shop uruchomiony, analiza co 5 minut...")
 while True:
