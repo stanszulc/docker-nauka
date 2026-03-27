@@ -120,7 +120,7 @@ services:
     depends_on:
       - postgres
     environment:
-      - GEMINI_API_KEY=AIzaSyCcQPzQZB6gE2zlRZOaStqp8myiVGbKz1k
+      - GEMINI_API_KEY=AIzaSyB9P1gdI1SpUPOzGBkjhA-YyHhRWp2bsQc
     restart: on-failure
   agent_eshop:
     build: ./agent_eshop
@@ -128,7 +128,7 @@ services:
     depends_on:
       - postgres
     environment:
-      - GEMINI_API_KEY=TUTAJ_WKLEJ_KLUCZ
+      - GEMINI_API_KEY=AIzaSyB9P1gdI1SpUPOzGBkjhA-YyHhRWp2bsQc
     restart: on-failure
 volumes:
   postgres_data:
