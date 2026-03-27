@@ -113,6 +113,7 @@ services:
       - grafana_data:/var/lib/grafana
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json
+      - ./grafana/eshop_dashboard.json:/var/lib/grafana/dashboards/eshop_dashboard.json
   agent_raport:
     build: ./agent_raport
     container_name: agent_raport
