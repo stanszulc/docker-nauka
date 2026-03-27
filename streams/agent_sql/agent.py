@@ -78,15 +78,15 @@ def zapisz_decyzje(decision, price_factor, reasoning, sygnaly):
     with conn.cursor() as cur:
         cur.execute("""
             INSERT INTO agent_actions
-                (decision, conversion_rate, revenue_15min, active_users, price_factor, reasoning)
-            VALUES (%s, %s, %s, %s, %s, %s)
+                (decision, conversion_rate, revenue_15min, active_users, price_factor, reasoning, agent_id)
+            VALUES (%s, %s, %s, %s, %s, %s, %s)
         """, (
             decision,
             sygnaly["conversion_rate"],
             sygnaly["revenue"],
             sygnaly["active_users"],
             price_factor,
-            reasoning
+            reasoning,
             "agent_sql"
         ))
     conn.commit()
