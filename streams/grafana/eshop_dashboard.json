@@ -1,338 +1,793 @@
 {
-  "title": "E-SHOP Activity Monitor",
-  "uid": "eshop-monitor",
-  "tags": ["eshop", "ecommerce"],
-  "timezone": "Europe/Warsaw",
-  "schemaVersion": 38,
-  "version": 1,
-  "refresh": "30s",
-  "time": { "from": "now-3h", "to": "now" },
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 2,
+  "links": [],
   "panels": [
     {
-      "id": 1,
-      "title": "💰 Revenue (last 1h)",
-      "type": "stat",
-      "gridPos": { "x": 0, "y": 0, "w": 4, "h": 4 },
-      "options": {
-        "reduceOptions": { "calcs": ["sum"] },
-        "colorMode": "background",
-        "graphMode": "none",
-        "textMode": "auto",
-        "orientation": "auto"
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "currencyPLN",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 500 },
-              { "color": "green", "value": 1000 }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, SUM((data->>'amount')::float) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 2,
-      "title": "🛒 Orders (last 1h)",
-      "type": "stat",
-      "gridPos": { "x": 4, "y": 0, "w": 4, "h": 4 },
-      "options": {
-        "reduceOptions": { "calcs": ["sum"] },
-        "colorMode": "background",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 10 },
-              { "color": "green", "value": 30 }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, COUNT(*) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 3,
-      "title": "👥 Active Users (last 5 min)",
-      "type": "stat",
-      "gridPos": { "x": 8, "y": 0, "w": 4, "h": 4 },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "blue", "value": null },
-              { "color": "green", "value": 5 }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, COUNT(DISTINCT (data->>'user_id')) AS value FROM click_events WHERE created_at > NOW() - INTERVAL '5 minutes'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 4,
-      "title": "📊 Avg Order Value (last 1h)",
-      "type": "stat",
-      "gridPos": { "x": 12, "y": 0, "w": 4, "h": 4 },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "colorMode": "background",
-        "graphMode": "none"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyPLN",
-          "decimals": 2,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 50 },
-              { "color": "green", "value": 150 }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, AVG((data->>'amount')::float) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 5,
-      "title": "🔄 Conversion Rate (clicks → purchases, last 1h)",
-      "type": "gauge",
-      "gridPos": { "x": 16, "y": 0, "w": 4, "h": 4 },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "minVizWidth": 75,
-        "minVizHeight": 75
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percent",
-          "min": 0,
-          "max": 100,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "red", "value": null },
-              { "color": "yellow", "value": 5 },
-              { "color": "green", "value": 15 }
-            ]
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, ROUND(100.0 * COUNT(DISTINCT p.id) / NULLIF(COUNT(DISTINCT c.id), 0), 2) AS value FROM click_events c LEFT JOIN purchase_events p ON p.created_at BETWEEN c.created_at - INTERVAL '30 minutes' AND c.created_at + INTERVAL '30 minutes' AND (p.data->>'user_id') = (c.data->>'user_id') WHERE c.created_at > NOW() - INTERVAL '1 hour'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 6,
-      "title": "🚨 Click/Purchase Ratio (anomaly signal)",
-      "type": "gauge",
-      "gridPos": { "x": 20, "y": 0, "w": 4, "h": 4 },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "min": 0,
-          "max": 50,
-          "color": { "mode": "thresholds" },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              { "color": "green", "value": null },
-              { "color": "yellow", "value": 20 },
-              { "color": "red", "value": 35 }
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "green",
+                "value": 1000
+              }
             ]
           },
-          "mappings": []
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, ROUND(1.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'), 0), 1) AS value FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour'",
-          "format": "table"
-        }
-      ]
-    },
-    {
-      "id": 7,
-      "title": "📈 Revenue per Minute",
-      "type": "timeseries",
-      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
-      "options": {
-        "tooltip": { "mode": "single" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "currencyPLN",
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 15,
-            "gradientMode": "opacity",
-            "spanNulls": false
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, SUM((data->>'amount')::float) AS \"Revenue\" FROM purchase_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "format": "time_series"
-        }
-      ]
-    },
-    {
-      "id": 8,
-      "title": "👆 User Activity (clicks & logins per minute)",
-      "type": "timeseries",
-      "gridPos": { "x": 12, "y": 4, "w": 12, "h": 8 },
-      "options": {
-        "tooltip": { "mode": "multi" },
-        "legend": { "displayMode": "list", "placement": "bottom" }
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short",
-          "color": { "mode": "palette-classic" },
-          "custom": {
-            "lineWidth": 2,
-            "fillOpacity": 10
-          }
-        }
-      },
-      "targets": [
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Clicks\" FROM click_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "format": "time_series"
+          "unit": "currencyPLN"
         },
-        {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Logins\" FROM login_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "format": "time_series"
-        }
-      ]
-    },
-    {
-      "id": 9,
-      "title": "🗺️ Purchase Locations",
-      "type": "geomap",
-      "gridPos": { "x": 0, "y": 12, "w": 12, "h": 9 },
-      "options": {
-        "view": { "id": "fit", "lat": 50.06, "lon": 19.94, "zoom": 11 },
-        "layers": [
-          {
-            "type": "markers",
-            "config": {
-              "style": {
-                "size": { "fixed": 5 },
-                "color": { "fixed": "green" },
-                "opacity": 0.7
-              },
-              "showLegend": true
-            },
-            "location": {
-              "mode": "coords",
-              "latitude": "lat",
-              "longitude": "lon"
-            },
-            "name": "Purchases"
-          }
-        ],
-        "controls": { "showZoom": true, "mouseWheelZoom": true }
+        "overrides": []
       },
-      "fieldConfig": { "defaults": {}, "overrides": [] },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT created_at AS time, (data->'gps'->>'lat')::float AS lat, (data->'gps'->>'lon')::float AS lon, (data->>'amount')::float AS amount FROM purchase_events WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 500",
-          "format": "table"
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, SUM((data->>'amount')::float) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "💰 Revenue (last 1h)",
+      "type": "stat"
     },
     {
-      "id": 10,
-      "title": "📋 Conversion Funnel: Login → Click → Purchase",
-      "type": "bargauge",
-      "gridPos": { "x": 12, "y": 12, "w": 12, "h": 9 },
-      "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
-        "orientation": "horizontal",
-        "displayMode": "gradient",
-        "showUnfilled": true
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "short",
-          "color": { "mode": "continuous-BlPu" },
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
-          }
-        }
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "green",
+                "value": 30
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
       },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "sum"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
       "targets": [
         {
-          "datasource": { "type": "postgres", "uid": "PCC52D03280B7034C" },
-          "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM login_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Logins\", (SELECT COUNT(*) FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Clicks\", (SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Purchases\"",
-          "format": "table"
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, COUNT(*) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
+          "refId": "A"
         }
-      ]
+      ],
+      "title": "🛒 Orders (last 1h)",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 5
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 0
+      },
+      "id": 3,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, COUNT(DISTINCT (data->>'user_id')) AS value FROM click_events WHERE created_at > NOW() - INTERVAL '5 minutes'",
+          "refId": "A"
+        }
+      ],
+      "title": "👥 Active Users (last 5 min)",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "decimals": 2,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "green",
+                "value": 150
+              }
+            ]
+          },
+          "unit": "currencyPLN"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "id": 4,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, AVG((data->>'amount')::float) AS value FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'",
+          "refId": "A"
+        }
+      ],
+      "title": "📊 Avg Order Value (last 1h)",
+      "type": "stat"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "green",
+                "value": 15
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "id": 5,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, ROUND(100.0 * COUNT(DISTINCT p.id) / NULLIF(COUNT(DISTINCT c.id), 0), 2) AS value FROM click_events c LEFT JOIN purchase_events p ON p.created_at BETWEEN c.created_at - INTERVAL '30 minutes' AND c.created_at + INTERVAL '30 minutes' AND (p.data->>'user_id') = (c.data->>'user_id') WHERE c.created_at > NOW() - INTERVAL '1 hour'",
+          "refId": "A"
+        }
+      ],
+      "title": "🔄 Conversion Rate (clicks → purchases, last 1h)",
+      "type": "gauge"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 50,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 35
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 6,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, ROUND(1.0 * COUNT(*) / NULLIF((SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour'), 0), 1) AS value FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour'",
+          "refId": "A"
+        }
+      ],
+      "title": "🚨 Click/Purchase Ratio (anomaly signal)",
+      "type": "gauge"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 15,
+            "gradientMode": "opacity",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "currencyPLN"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "id": 7,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, SUM((data->>'amount')::float) AS \"Revenue\" FROM purchase_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        }
+      ],
+      "title": "📈 Revenue per Minute",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "linear",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Clicks\" FROM click_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT date_trunc('minute', created_at AT TIME ZONE 'UTC' AT TIME ZONE 'Europe/Warsaw') AS time, COUNT(*) AS \"Logins\" FROM login_events WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
+          "refId": "B"
+        }
+      ],
+      "title": "👆 User Activity (clicks & logins per minute)",
+      "type": "timeseries"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "id": 9,
+      "options": {
+        "controls": {
+          "mouseWheelZoom": true,
+          "showAttribution": true,
+          "showDebug": false,
+          "showMeasure": false,
+          "showScale": false,
+          "showZoom": true
+        },
+        "layers": [
+          {
+            "config": {
+              "showLegend": true,
+              "style": {
+                "color": {
+                  "fixed": "green"
+                },
+                "opacity": 0.7,
+                "size": {
+                  "fixed": 5
+                }
+              }
+            },
+            "location": {
+              "latitude": "lat",
+              "longitude": "lon",
+              "mode": "coords"
+            },
+            "name": "Purchases",
+            "type": "markers"
+          }
+        ],
+        "tooltip": {
+          "mode": "details"
+        },
+        "view": {
+          "allLayers": true,
+          "id": "fit",
+          "lat": 50.06,
+          "lon": 19.94,
+          "zoom": 11
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT created_at AS time, (data->'gps'->>'lat')::float AS lat, (data->'gps'->>'lon')::float AS lon, (data->>'amount')::float AS amount FROM purchase_events WHERE $__timeFilter(created_at) ORDER BY created_at DESC LIMIT 500",
+          "refId": "A"
+        }
+      ],
+      "title": "🗺️ Purchase Locations",
+      "type": "geomap"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "continuous-BlPu"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "id": 10,
+      "options": {
+        "displayMode": "gradient",
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "maxVizHeight": 300,
+        "minVizHeight": 16,
+        "minVizWidth": 8,
+        "namePlacement": "auto",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "sizing": "auto",
+        "valueMode": "color"
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM login_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Logins\", (SELECT COUNT(*) FROM click_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Clicks\", (SELECT COUNT(*) FROM purchase_events WHERE created_at > NOW() - INTERVAL '1 hour') AS \"Purchases\"",
+          "refId": "A"
+        }
+      ],
+      "title": "📋 Conversion Funnel: Login → Click → Purchase",
+      "type": "bargauge"
     }
   ],
-  "templating": { "list": [] },
-  "annotations": { "list": [] }
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 40,
+  "tags": [
+    "eshop",
+    "ecommerce"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "Europe/Warsaw",
+  "title": "E-SHOP Activity Monitor",
+  "uid": "eshop-monitor",
+  "version": 2,
+  "weekStart": ""
 }
