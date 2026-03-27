@@ -37,7 +37,12 @@ def pobierz_dane():
 
 def generuj_raport():
     print(f"Generuje raport: {datetime.now()}")
-    rows, data = pobierz_dane()
+    try:
+        rows, data = pobierz_dane()
+    except Exception as e:
+        print(f"Blad bazy danych: {e}")
+        return
+
     if not rows:
         print("Brak danych za wczoraj")
         return
@@ -68,8 +73,12 @@ Pisz naturalnie, jak czlowiek - nie jak tabela danych.
 {dane_txt}
 """
 
-    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
-    raport = response.text
+    try:
+        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        raport = response.text
+    except Exception as e:
+        print(f"Blad Gemini: {e}")
+        return
 
     print("\n" + "="*60)
     print(f"RAPORT DZIENNY - {data}")
