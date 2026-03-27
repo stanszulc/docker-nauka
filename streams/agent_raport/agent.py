@@ -1,4 +1,4 @@
-import os
+importimport os
 import psycopg2
 from google import genai
 from datetime import datetime, timedelta
@@ -68,7 +68,7 @@ Pisz naturalnie, jak czlowiek - nie jak tabela danych.
 {dane_txt}
 """
 
-    response = client.models.generate_content(model="gemini-1.5-flash", contents=prompt)
+    response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
     raport = response.text
 
     print("\n" + "="*60)
