@@ -87,6 +87,7 @@ def zapisz_decyzje(decision, price_factor, reasoning, sygnaly):
             sygnaly["active_users"],
             price_factor,
             reasoning
+            "agent_sql"
         ))
     conn.commit()
     conn.close()
