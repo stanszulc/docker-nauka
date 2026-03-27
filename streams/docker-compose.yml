@@ -122,6 +122,14 @@ services:
     environment:
       - GEMINI_API_KEY=AIzaSyCcQPzQZB6gE2zlRZOaStqp8myiVGbKz1k
     restart: on-failure
+  agent_eshop:
+    build: ./agent_eshop
+    container_name: agent_eshop
+    depends_on:
+      - postgres
+    environment:
+      - GEMINI_API_KEY=TUTAJ_WKLEJ_KLUCZ
+    restart: on-failure
 volumes:
   postgres_data:
   grafana_data:
