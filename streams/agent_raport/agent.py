@@ -1,4 +1,4 @@
-importimport os
+import os
 import psycopg2
 from google import genai
 from datetime import datetime, timedelta
