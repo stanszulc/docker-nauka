@@ -12,6 +12,40 @@
         "iconColor": "rgba(0, 211, 255, 1)",
         "name": "Annotations & Alerts",
         "type": "dashboard"
+      },
+      {
+        "datasource": {
+          "type": "grafana-postgresql-datasource",
+          "uid": "PCC52D03280B7034C"
+        },
+        "enable": true,
+        "hide": false,
+        "iconColor": "red",
+        "name": "Agent Decisions",
+        "target": {
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\r\n  timestamp AS time,\r\n  decision AS text,\r\n  ARRAY[decision, agent_id] AS tags\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp)\r\n  AND agent_id = 'agent_sql'\r\n  AND decision != 'NEUTRAL'\r\nORDER BY timestamp",
+          "refId": "Anno",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
       }
     ]
   },
@@ -781,13 +815,13 @@
     "list": []
   },
   "time": {
-    "from": "now-3h",
+    "from": "now-1h",
     "to": "now"
   },
   "timepicker": {},
   "timezone": "Europe/Warsaw",
   "title": "E-SHOP Activity Monitor",
   "uid": "eshop-monitor",
-  "version": 2,
+  "version": 4,
   "weekStart": ""
 }
