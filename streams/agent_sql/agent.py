@@ -65,11 +65,13 @@ def pobierz_sygnaly():
         "conversion_rate": conversion_rate
     }
 
+
+
 def podejmij_decyzje(s):
-    if s["conversion_rate"] > 40 or s["revenue_trend_pct"] > 20:
-        return "PRICE_UP", 1.2, "Wysoka konwersja lub rosnacy przychod - podwyzka cen o 20%"
-    elif s["conversion_rate"] < 30 or s["revenue_trend_pct"] < -20:
-        return "PROMO", 0.8, "Niska konwersja lub spadajacy przychod - promocja -20%"
+    if s["revenue_trend_pct"] > 15:
+        return "PRICE_UP", 1.2, "Rosnacy przychod - podwyzka cen o 20%"
+    elif s["revenue_trend_pct"] < -15:
+        return "PROMO", 0.8, "Spadajacy przychod - promocja -20%"
     else:
         return "NEUTRAL", 1.0, "Stabilna sytuacja - brak zmian cen"
 
