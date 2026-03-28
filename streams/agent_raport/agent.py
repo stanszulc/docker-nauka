@@ -8,14 +8,29 @@ import time
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY")
 client = genai.Client(api_key=GEMINI_API_KEY)
 
-def pobierz_dane():
-    conn = psycopg2.connect(
-        dbname="events",
-        user="kafka",
-        password="kafka",
-        host="postgres",
-        port=5432
+def get_conn():
+    return psycopg2.connect(
+        dbname="events", user="kafka",
+        password="kafka", host="postgres", port=5432
     )
+
+def create_tables():
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            CREATE TABLE IF NOT EXISTS agent_reports (
+                id SERIAL PRIMARY KEY,
+                timestamp TIMESTAMP DEFAULT NOW(),
+                data_raportu DATE,
+                raport TEXT
+            )
+        """)
+    conn.commit()
+    conn.close()
+    print("Tabela agent_reports gotowa")
+
+def pobierz_dane():
+    conn = get_conn()
     wczoraj = (datetime.now() - timedelta(days=1)).date()
     with conn.cursor() as cur:
         cur.execute("""
@@ -34,6 +49,17 @@ def pobierz_dane():
         rows = cur.fetchall()
     conn.close()
     return rows, wczoraj
+
+def zapisz_raport(data, raport):
+    conn = get_conn()
+    with conn.cursor() as cur:
+        cur.execute("""
+            INSERT INTO agent_reports (data_raportu, raport)
+            VALUES (%s, %s)
+        """, (data, raport))
+    conn.commit()
+    conn.close()
+    print("Raport zapisany do bazy")
 
 def generuj_raport():
     print(f"Generuje raport: {datetime.now()}")
@@ -74,7 +100,9 @@ Pisz naturalnie, jak czlowiek - nie jak tabela danych.
 """
 
     try:
-        response = client.models.generate_content(model="gemini-2.0-flash", contents=prompt)
+        response = client.models.generate_content(
+            model="gemini-2.0-flash", contents=prompt
+        )
         raport = response.text
     except Exception as e:
         print(f"Blad Gemini: {e}")
@@ -86,6 +114,12 @@ Pisz naturalnie, jak czlowiek - nie jak tabela danych.
     print(raport)
     print("="*60 + "\n")
 
+    try:
+        zapisz_raport(data, raport)
+    except Exception as e:
+        print(f"Blad zapisu raportu: {e}")
+
+create_tables()
 generuj_raport()
 
 schedule.every().day.at("07:00").do(generuj_raport)
