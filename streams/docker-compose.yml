@@ -100,6 +100,9 @@ services:
       - kafka
     restart: on-failure
 
+  # =========================
+  # Grafana
+  # =========================
   grafana:
     image: grafana/grafana:11.4.0
     container_name: grafana
@@ -114,21 +117,26 @@ services:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - ./grafana/dashboard.json:/var/lib/grafana/dashboards/dashboard.json
       - ./grafana/eshop_dashboard.json:/var/lib/grafana/dashboards/eshop_dashboard.json
+
+  # =========================
+  # AI Agents
+  # =========================
   agent_raport:
     build: ./agent_raport
     container_name: agent_raport
     depends_on:
       - postgres
-    environment:
-      - GEMINI_API_KEY=AIzaSyB9P1gdI1SpUPOzGBkjhA-YyHhRWp2bsQc
+    env_file:
+      - .env
     restart: on-failure
+
   agent_eshop:
     build: ./agent_eshop
     container_name: agent_eshop
     depends_on:
       - postgres
-    environment:
-      - GEMINI_API_KEY=AIzaSyB9P1gdI1SpUPOzGBkjhA-YyHhRWp2bsQc
+    env_file:
+      - .env
     restart: on-failure
 
   agent_sql:
@@ -137,6 +145,7 @@ services:
     depends_on:
       - postgres
     restart: on-failure
+
 volumes:
   postgres_data:
   grafana_data:
