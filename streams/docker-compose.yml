@@ -146,6 +146,20 @@ services:
       - postgres
     restart: on-failure
 
+  # =========================
+  # Reverse Proxy
+  # =========================
+  nginx:
+    image: nginx:latest
+    container_name: nginx_proxy
+    restart: always
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+    depends_on:
+      - grafana
+
 volumes:
   postgres_data:
   grafana_data:
