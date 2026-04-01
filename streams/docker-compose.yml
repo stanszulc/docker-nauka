@@ -147,7 +147,7 @@ services:
     restart: on-failure
 
   # =========================
-  # Reverse Proxy
+  # Reverse Proxy (Nginx)
   # =========================
   nginx:
     image: nginx:latest
@@ -155,8 +155,10 @@ services:
     restart: always
     ports:
       - "80:80"
+      - "443:443"
     volumes:
       - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
     depends_on:
       - grafana
 
