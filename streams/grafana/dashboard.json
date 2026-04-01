@@ -125,7 +125,7 @@
           }
         }
       ],
-      "title": "Sredni czas dojazdu Radziszów - Podłężę - dni robocze",
+      "title": "erage return time: Podłęże – Radziszów – business days",
       "type": "barchart"
     },
     {
@@ -232,7 +232,7 @@
           }
         }
       ],
-      "title": "Sredni czas powroty Podłężę - Radziszów - dni robocze",
+      "title": "erage return time: Podłęże – Radziszów – business days",
       "type": "barchart"
     },
     {
@@ -296,7 +296,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'czas_min')::float AS \"czas\"\r\nFROM commute_events\r\nORDER BY created_at DESC\r\nLIMIT 1",
+          "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'czas_min')::float AS value\r\nFROM commute_events\r\nWHERE \r\n  data->>'kierunek' = 'dojazd'\r\nORDER BY created_at DESC\r\nLIMIT 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -317,7 +317,7 @@
           }
         }
       ],
-      "title": "Czas dojazdu Skawina-Podłęże",
+      "title": "Current Travel Time: Skawina – Podłęże",
       "type": "gauge"
     },
     {
@@ -331,6 +331,8 @@
             "mode": "thresholds"
           },
           "mappings": [],
+          "max": 45,
+          "min": 15,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -344,7 +346,7 @@
               },
               {
                 "color": "red",
-                "value": 50
+                "value": 35
               }
             ]
           }
@@ -357,7 +359,7 @@
         "x": 12,
         "y": 8
       },
-      "id": 2,
+      "id": 10,
       "options": {
         "minVizHeight": 75,
         "minVizWidth": 75,
@@ -367,7 +369,7 @@
             "lastNotNull"
           ],
           "fields": "",
-          "values": true
+          "values": false
         },
         "showThresholdLabels": false,
         "showThresholdMarkers": true,
@@ -379,7 +381,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  data->>'nazwa' AS metric,\r\n  ROUND(AVG((data->>'poziom_korkow')::numeric) * 100) AS \"poziom_korkow\"\r\nFROM traffic_events\r\nWHERE created_at > NOW() - INTERVAL '10 minutes'\r\nGROUP BY data->>'nazwa'",
+          "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'czas_min')::float AS value\r\nFROM commute_events\r\nWHERE \r\n  data->>'kierunek' = 'powrot'\r\nORDER BY created_at DESC\r\nLIMIT 1",
           "refId": "A",
           "sql": {
             "columns": [
@@ -400,13 +402,13 @@
           }
         }
       ],
-      "title": "Poziom korków",
+      "title": "Current Travel Time: Podłęże - Skawina",
       "type": "gauge"
     },
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -546,7 +548,7 @@
           }
         }
       ],
-      "title": "🗺️ Mapa ruchu Kraków",
+      "title": "🗺️Five point of monitoring level of traffic",
       "type": "geomap"
     },
     {
@@ -557,40 +559,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 0,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "linear",
-            "lineWidth": 1,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
+            "mode": "thresholds"
           },
           "mappings": [],
           "thresholds": {
@@ -601,8 +570,12 @@
                 "value": null
               },
               {
+                "color": "#EAB839",
+                "value": 25
+              },
+              {
                 "color": "red",
-                "value": 80
+                "value": 50
               }
             ]
           }
@@ -615,30 +588,29 @@
         "x": 12,
         "y": 16
       },
-      "id": 1,
+      "id": 2,
       "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": true
         },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
+        "showThresholdLabels": false,
+        "showThresholdMarkers": true,
+        "sizing": "auto"
       },
       "pluginVersion": "11.4.0",
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "PCC52D03280B7034C"
-          },
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\r\n  created_at AS time,\r\n  (data->>'predkosc_kmh')::numeric AS predkosc,\r\n  data->>'nazwa' AS ulica\r\nFROM traffic_events\r\nORDER BY created_at ASC\r\n",
+          "rawSql": "SELECT\r\n  data->>'nazwa' AS metric,\r\n  ROUND(AVG((data->>'poziom_korkow')::numeric) * 100) AS \"poziom_korkow\"\r\nFROM traffic_events\r\nWHERE created_at > NOW() - INTERVAL '10 minutes'\r\nGROUP BY data->>'nazwa'",
           "refId": "A",
           "sql": {
             "columns": [
@@ -659,8 +631,8 @@
           }
         }
       ],
-      "title": "Predkośc w korkach KRAKÓW",
-      "type": "timeseries"
+      "title": "Five points - traffic level",
+      "type": "gauge"
     },
     {
       "datasource": {
@@ -833,7 +805,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT timestamp, data_raportu, raport \r\nFROM agent_reports \r\nORDER BY timestamp DESC \r\nLIMIT 1",
+          "rawSql": "SELECT timestamp, data_raportu, raport \r\nFROM agent_reports \r\nORDER BY timestamp DESC \r\nLIMIT 3",
           "refId": "A",
           "sql": {
             "columns": [
@@ -854,7 +826,7 @@
           }
         }
       ],
-      "title": "RAport Agenta AI o ruchu na trasie RAdziszów-Podłęże",
+      "title": "AGENT AI - Daily Report  Radziszów-Podłęże",
       "type": "table"
     },
     {
@@ -899,6 +871,6 @@
   "timezone": "browser",
   "title": "Kraków - ruch i korki",
   "uid": "cffo52cmjjim8a",
-  "version": 6,
+  "version": 10,
   "weekStart": ""
 }
