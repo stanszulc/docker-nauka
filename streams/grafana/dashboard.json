@@ -24,7 +24,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -131,7 +131,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -238,7 +238,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -323,7 +323,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -552,7 +552,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -665,7 +665,7 @@
     {
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "PCC52D03280B7034C"
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -747,7 +747,8 @@
     },
     {
       "datasource": {
-        "uid": "PCC52D03280B7034C"
+        "type": "grafana-postgresql-datasource",
+        "uid": "efhplbuxgay9sf"
       },
       "fieldConfig": {
         "defaults": {
@@ -855,6 +856,32 @@
       ],
       "title": "RAport Agenta AI o ruchu na trasie RAdziszów-Podłęże",
       "type": "table"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 2,
+        "w": 5,
+        "x": 0,
+        "y": 51
+      },
+      "id": 9,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"text-align: left;\">\n  <a href=\"http://grafana.stsconsulting.pl/d/efhr1gh3glvr4a/menu?orgId=1&from=now-6h&to=now&timezone=browser\" \n     style=\"display: inline-flex; \n            align-items: center; \n            gap: 10px; \n            background-color: #3274d9; \n            color: white; \n            padding: 10px 20px; \n            border-radius: 5px; \n            text-decoration: none; \n            font-weight: bold;\">\n     <span>🏠</span>\n     <span>POWRÓT DO MENU</span>\n  </a>\n</div>",
+        "mode": "html"
+      },
+      "pluginVersion": "11.4.0",
+      "title": "",
+      "transparent": true,
+      "type": "text"
     }
   ],
   "preload": false,
@@ -872,6 +899,6 @@
   "timezone": "browser",
   "title": "Kraków - ruch i korki",
   "uid": "cffo52cmjjim8a",
-  "version": 8,
+  "version": 6,
   "weekStart": ""
 }
