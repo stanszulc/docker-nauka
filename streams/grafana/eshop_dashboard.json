@@ -640,7 +640,7 @@
           "refId": "B"
         }
       ],
-      "title": "👆 User Activity (clicks & logins per minute)",
+      "title": "👆 User Activity (clicks & logins per minute)   AGENT SQL (red - PRICE UP, green - PROMO)",
       "type": "timeseries"
     },
     {
@@ -749,7 +749,7 @@
           }
         }
       ],
-      "title": "Purchase Revenue 5min avg · Agent input",
+      "title": "Purchase Revenue 5min avg · Agent input AGENT SQL (red - PRICE UP, green - PROMO",
       "type": "timeseries"
     },
     {
@@ -1020,7 +1020,7 @@
       },
       "gridPos": {
         "h": 2,
-        "w": 6,
+        "w": 4,
         "x": 0,
         "y": 41
       },
@@ -1058,6 +1058,6 @@
   "timezone": "Europe/Warsaw",
   "title": "E-SHOP Activity Monitor",
   "uid": "eshop-monitor",
-  "version": 11,
+  "version": 14,
   "weekStart": ""
 }
