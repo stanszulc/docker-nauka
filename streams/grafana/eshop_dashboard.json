@@ -22,7 +22,7 @@
       {
         "datasource": {
           "type": "grafana-postgresql-datasource",
-          "uid": "PCC52D03280B7034C"
+          "uid": "efhplbuxgay9sf"
         },
         "enable": true,
         "hide": false,
@@ -31,9 +31,11 @@
         "target": {
           "editorMode": "code",
           "format": "table",
+          "limit": 100,
+          "matchAny": false,
           "rawQuery": true,
           "rawSql": "SELECT timestamp AS time, decision AS text, ARRAY[decision] AS tags\r\nFROM agent_actions\r\nWHERE $__timeFilter(timestamp) AND agent_id = 'agent_sql' AND decision = 'PRICE_UP'\r\nORDER BY timestamp",
-          "refId": "Anno",
+          "refId": "A",
           "sql": {
             "columns": [
               {
@@ -50,13 +52,15 @@
               }
             ],
             "limit": 50
-          }
+          },
+          "tags": [],
+          "type": "dashboard"
         }
       },
       {
         "datasource": {
           "type": "grafana-postgresql-datasource",
-          "uid": "PCC52D03280B7034C"
+          "uid": "efhplbuxgay9sf"
         },
         "enable": true,
         "hide": false,
@@ -1054,6 +1058,6 @@
   "timezone": "Europe/Warsaw",
   "title": "E-SHOP Activity Monitor",
   "uid": "eshop-monitor",
-  "version": 8,
+  "version": 11,
   "weekStart": ""
 }
