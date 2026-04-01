@@ -1,1 +1,67 @@
 
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": 3,
+  "links": [],
+  "panels": [
+    {
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "<div style=\"display: flex; flex-wrap: wrap; gap: 20px; justify-content: center; align-items: center; padding: 20px;\">\n\n  <a href=\"http://grafana.stsconsulting.pl/d/eshop-monitor/e-shop-activity-monitor?orgId=1&from=now-1h&to=now&timezone=Europe%2FWarsaw&refresh=5m\" \n     style=\"text-decoration: none; \n            background: linear-gradient(135deg, #3274d9 0%, #1f49a1 100%); \n            color: white; \n            padding: 20px 40px; \n            border-radius: 8px; \n            font-weight: bold; \n            font-size: 18px; \n            box-shadow: 0 4px 6px rgba(0,0,0,0.3); \n            transition: transform 0.2s;\n            display: flex;\n            flex-direction: column;\n            align-items: center;\n            width: 250px;\">\n    <span style=\"font-size: 30px; margin-bottom: 10px;\">🛒</span>\n    <span>E-SHOP MONITOR</span>\n  </a>\n\n  <a href=\"http://grafana.stsconsulting.pl/d/cffo52cmjjim8a/krakow-ruch-i-korki?orgId=1&from=now-15m&to=now&timezone=browser&refresh=30s\" \n     style=\"text-decoration: none; \n            background: linear-gradient(135deg, #f05a28 0%, #a33c1a 100%); \n            color: white; \n            padding: 20px 40px; \n            border-radius: 8px; \n            font-weight: bold; \n            font-size: 18px; \n            box-shadow: 0 4px 6px rgba(0,0,0,0.3); \n            transition: transform 0.2s;\n            display: flex;\n            flex-direction: column;\n            align-items: center;\n            width: 250px;\">\n    <span style=\"font-size: 30px; margin-bottom: 10px;\">🚗</span>\n    <span>TRAFFIC KRAKÓW </span>\n  </a>\n\n</div>",
+        "mode": "html"
+      },
+      "pluginVersion": "11.4.0",
+      "title": "Panel Title",
+      "type": "text"
+    }
+  ],
+  "preload": false,
+  "schemaVersion": 40,
+  "tags": [],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-6h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "MENU",
+  "uid": "efhr1gh3glvr4a",
+  "version": 5,
+  "weekStart": ""
+}
