@@ -6,15 +6,7 @@ from datetime import datetime
 from kafka import KafkaProducer
 
 # ===== KONFIGURACJA GPS =====
-GPS_MODE = "normal"  # opcje: "normal", "uniform", "clusters"
-
-# Centrum Krakowa (Rynek Główny)
-CENTER_LAT = 50.0617
-CENTER_LON = 19.9373
-STD_LAT = 0.045   # ~5 km
-STD_LON = 0.045
-
-# Skupiska (centra handlowe)
+# Centra handlowe w Krakowie (współrzędne przybliżone)
 CLUSTERS = [
     (50.0617, 19.9373),  # Rynek Główny
     (50.0745, 19.9884),  # Galeria Krakowska
@@ -23,17 +15,14 @@ CLUSTERS = [
     (50.0121, 19.9164),  # Zakopianka
 ]
 
+# 500 metrów w stopniach (~0.0045 stopnia)
+DEVIATION = 0.0045
+
 def generate_gps():
-    if GPS_MODE == "normal":
-        lat = random.gauss(CENTER_LAT, STD_LAT)
-        lon = random.gauss(CENTER_LON, STD_LON)
-    elif GPS_MODE == "uniform":
-        lat = random.uniform(50.01, 50.11)
-        lon = random.uniform(19.88, 20.00)
-    else:  # clusters
-        lat, lon = random.choice(CLUSTERS)
-        lat += random.uniform(-0.005, 0.005)
-        lon += random.uniform(-0.005, 0.005)
+    """Losuje centrum handlowe i dodaje odchylenie ~500m"""
+    lat, lon = random.choice(CLUSTERS)
+    lat += random.uniform(-DEVIATION, DEVIATION)
+    lon += random.uniform(-DEVIATION, DEVIATION)
     return round(lat, 6), round(lon, 6)
 
 DEFAULT_PRICE_FACTOR = 1.0
