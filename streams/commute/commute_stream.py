@@ -6,15 +6,15 @@ from kafka import KafkaProducer
 
 TRASY = [
     {
-        "nazwa": "Radziszow -> Podleze",
+        "nazwa": "Radziszow -> Niepolomice",
         "kierunek": "dojazd",
         "start_lat": 49.9712, "start_lon": 19.8423,
-        "koniec_lat": 49.9980, "koniec_lon": 20.0900,
+        "koniec_lat": 50.0335, "koniec_lon": 20.2172,
     },
     {
-        "nazwa": "Podleze -> Radziszow",
+        "nazwa": "Niepolomice -> Radziszow",
         "kierunek": "powrot",
-        "start_lat": 49.9980, "start_lon": 20.0900,
+        "start_lat": 50.0335, "start_lon": 20.2172,
         "koniec_lat": 49.9712, "koniec_lon": 19.8423,
     },
 ]
