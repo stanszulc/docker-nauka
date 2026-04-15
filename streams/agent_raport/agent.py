@@ -262,9 +262,9 @@ Pisz zwięźle i konkretnie.
 
 create_tables()
 generuj_raport()
-schedule.every().day.at("07:00").do(generuj_raport)
-schedule.every().saturday.at("07:00").do(generuj_raport_tygodniowy)
-print("Agent uruchomiony, czeka na 7:00...")
+schedule.every().day.at("02:00").do(generuj_raport)
+schedule.every().saturday.at("02:00").do(generuj_raport_tygodniowy)
+print("Agent uruchomiony, czeka na 2:00...")
 while True:
     schedule.run_pending()
     time.sleep(60)
