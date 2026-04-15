@@ -150,20 +150,22 @@ Jutro jest {jutro_nazwa.upper()} ({jutro.strftime('%d.%m.%Y')}).
 Poniżej znajdują się dane historyczne dla poprzednich {jutro_nazwa}ów.
 
 Założenia:
-- Praca zaczyna się między 7:00 a 9:00 (elastyczne godziny)
-- Praca trwa 8 godzin
+- Praca zaczyna się między 7:00 a 9:00 (elastyczne godziny, NIE wcześniej niż 7:00)
+- Praca trwa ok 8 godzin mozesz wybrac optymalny czas od 8.00 do 8 godzin i 15 minuu - wybiez optymalny
+- Powrót = godzina wyjazdu + 8h pracy + czas dojazdu
 - Trasa: Skawina → Podłęże (dojazd), Podłęże → Skawina (powrót)
+- Rozważaj TYLKO godziny wyjazdu między 6:30 a 8:30
+- Rozważaj TYLKO godziny powrotu między 14:30 a 18:30
 
 Na podstawie danych odpowiedz:
-1. O której godzinie najlepiej wyjechać rano? (podaj konkretną godzinę i uzasadnij krótko)
-2. O której można spodziewać się najlepszego powrotu? (podaj przedział np. 15:30–16:30)
+1. O której godzinie najlepiej wyjechać rano? (tylko 6:30–8:30, podaj konkretną godzinę i uzasadnij krótko)
+2. O której można spodziewać się najlepszego powrotu? (tylko 14:30–18:30, podaj przedział)
 3. Jednozdaniowe podsumowanie jutrzejszego dnia
 
 Pisz konkretnie i krótko. Nie przepisuj danych — wyciągnij wnioski.
 
 {dane_txt}
 """
-
     raport = call_gemini(prompt)
     if not raport:
         return
