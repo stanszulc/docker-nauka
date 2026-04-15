@@ -150,19 +150,27 @@ Jutro jest {jutro_nazwa.upper()} ({jutro.strftime('%d.%m.%Y')}).
 Poniżej znajdują się dane historyczne dla poprzednich {jutro_nazwa}ów.
 
 Założenia:
-- Praca zaczyna się między 7:00 a 9:00 (elastyczne godziny, NIE wcześniej niż 7:00)
-- Praca trwa ok 8 godzin mozesz wybrac optymalny czas od 8.00 do 8 godzin i 15 minuu - wybiez optymalny
-- Powrót = godzina wyjazdu + 8h pracy + czas dojazdu
+- Rozważaj TYLKO godziny wyjazdu z domu między 6:30 a 8:30
+- Praca zaczyna się NIE WCZEŚNIEJ niż 7:00
+- Czas pracy: od 8h do 8h 15min (wybierz optymalny wariant)
+- Rozważaj TYLKO godziny powrotu z pracy między 14:30 a 18:30
 - Trasa: Skawina → Podłęże (dojazd), Podłęże → Skawina (powrót)
-- Rozważaj TYLKO godziny wyjazdu między 6:30 a 8:30
-- Rozważaj TYLKO godziny powrotu między 14:30 a 18:30
 
-Na podstawie danych odpowiedz:
-1. O której godzinie najlepiej wyjechać rano? (tylko 6:30–8:30, podaj konkretną godzinę i uzasadnij krótko)
-2. O której można spodziewać się najlepszego powrotu? (tylko 14:30–18:30, podaj przedział)
-3. Jednozdaniowe podsumowanie jutrzejszego dnia
+Wybierz optymalną godzinę wyjazdu z domu (najmniejsze opóźnienie w drodze do pracy).
+Następnie WYLICZ konkretne godziny według wzoru:
+- Przyjazd do pracy = wyjazd z domu + średni czas dojazdu
+- Wyjazd z pracy = przyjazd do pracy + czas pracy (8h lub 8h15min)
+- Powrót do domu = wyjazd z pracy + średni czas powrotu dla tej godziny
 
-Pisz konkretnie i krótko. Nie przepisuj danych — wyciągnij wnioski.
+Odpowiedz TYLKO w tym formacie, bez dodatkowego tekstu:
+
+Wyjazd z domu:    HH:MM
+Przyjazd do pracy: HH:MM
+Czas pracy:        8h / 8h 15min
+Wyjazd z pracy:   HH:MM
+Powrót do domu:   HH:MM
+
+Podsumowanie: [jedno zdanie]
 
 {dane_txt}
 """
