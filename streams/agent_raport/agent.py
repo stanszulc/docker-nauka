@@ -140,8 +140,8 @@ def generuj_raport():
                     f"(próbek: {int(pomiary)})\n")
         return txt
 
-    dane_txt = formatuj(dojazd, "DOJAZD Skawina → Podłęże")
-    dane_txt += "\n" + formatuj(powrot, "POWRÓT Podłęże → Skawina")
+    dane_txt = formatuj(dojazd, "DOJAZD Radziszów → Niepołomice")
+    dane_txt += "\n" + formatuj(powrot, "POWRÓT Niepołomice → Radziszów")
 
     prompt = f"""
 Jesteś asystentem pomagającym zaplanować dojazd do pracy.
@@ -154,7 +154,7 @@ Założenia:
 - Praca zaczyna się NIE WCZEŚNIEJ niż 7:00
 - Czas pracy: od 8h do 8h 15min (wybierz optymalny wariant)
 - Rozważaj TYLKO godziny powrotu z pracy między 14:30 a 18:30
-- Trasa: Skawina → Podłęże (dojazd), Podłęże → Skawina (powrót)
+- Trasa: Radziszów → Niepołomice (dojazd), Niepołomice → Radziszów (powrót)
 
 Wybierz optymalną godzinę wyjazdu z domu (najmniejsze opóźnienie w drodze do pracy).
 Następnie WYLICZ konkretne godziny według wzoru:
