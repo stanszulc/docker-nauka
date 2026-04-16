@@ -152,7 +152,7 @@ Poniżej znajdują się dane historyczne dla poprzednich {jutro_nazwa}ów.
 Założenia:
 - Rozważaj TYLKO godziny wyjazdu z domu między 6:30 a 8:30
 - Praca zaczyna się NIE WCZEŚNIEJ niż 7:00
-- Czas pracy: od 8h do 8h 15min (wybierz optymalny wariant)
+- Czas pracy: od 8h do 8h 15min (wybierz optymalny wariant, odstep 5 minut )
 - Rozważaj TYLKO godziny powrotu z pracy między 14:30 a 18:30
 - Trasa: Radziszów → Niepołomice (dojazd), Niepołomice → Radziszów (powrót)
 
@@ -163,7 +163,7 @@ Następnie WYLICZ konkretne godziny według wzoru:
 - Powrót do domu = wyjazd z pracy + średni czas powrotu dla tej godziny
 
 Odpowiedz TYLKO w tym formacie, bez dodatkowego tekstu:
-
+Trasa: Radziszów ↔ Niepołomice↔ Radziszów
 Wyjazd z domu:    HH:MM
 Przyjazd do pracy: HH:MM
 Czas pracy:        8h / 8h 15min
@@ -227,7 +227,7 @@ def generuj_raport_tygodniowy():
     prompt = f"""
 Jesteś asystentem analizującym dane o ruchu drogowym.
 
-Poniżej są dane z poprzedniego tygodnia roboczego dla trasy Skawina ↔ Podłęże.
+Poniżej są dane z poprzedniego tygodnia roboczego dla trasy  ↔ Radziszów ↔ Niepołomice↔ Radziszów
 Założenia: praca 8 godzin, elastyczny start 7:00–9:00.
 
 Wygeneruj tygodniowe podsumowanie w formacie markdown zawierające:
