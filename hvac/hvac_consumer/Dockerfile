@@ -10,4 +10,4 @@ COPY consumer.py .
 RUN useradd -m appuser && chown -R appuser /app
 USER appuser
 
-CMD ["python", "-u
+CMD ["python", "-u", "consumer.py"]
