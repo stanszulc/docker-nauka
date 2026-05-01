@@ -255,9 +255,28 @@
             "type": "postgres",
             "uid": "PCC52D03280B7034C"
           },
+          "editorMode": "code",
           "format": "time_series",
-          "rawSql": "SELECT NOW() AS time, failure_type FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
-          "refId": "A"
+          "rawQuery": true,
+          "rawSql": "SELECT NOW() AS time,\nCASE failure_type\n  WHEN 'None' THEN 0\n  WHEN 'HDF' THEN 1\n  WHEN 'PWF' THEN 2\n  WHEN 'OSF' THEN 3\n  WHEN 'TWF' THEN 4\n  ELSE 0\nEND AS failure_type\nFROM hvac_metrics\nWHERE device_id = $device_id\nORDER BY ts DESC LIMIT 1",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
         }
       ],
       "title": "Failure Type",
@@ -1535,6 +1554,6 @@
   "timezone": "browser",
   "title": "HVAC Predictive Maintenance",
   "uid": "hvac-predictive-maintenance",
-  "version": 13,
+  "version": 15,
   "weekStart": ""
 }
