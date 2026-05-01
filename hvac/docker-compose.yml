@@ -1,1 +1,69 @@
+version: "3.8"
 
+# ── HVAC Predictive Maintenance Module ──────────────────────────────────────
+# Standalone module — uses shared Kafka + Postgres from streams/
+# To start:  docker-compose up -d
+# To stop:   docker-compose down          (streams/ unaffected)
+# Requires:  cd streams && docker-compose up -d  (Kafka + Postgres must be running)
+
+networks:
+  streams_default:
+    external: true   # shared with streams/docker-compose.yml
+
+services:
+
+  # ── 1. API Gateway: receives events from mobile app ───────────────────────
+  hvac_stream:
+    build: ./hvac_stream
+    container_name: hvac_stream
+    restart: unless-stopped
+    ports:
+      - "8001:8000"              # accessible at http://VM_IP:8001
+    environment:
+      KAFKA_BOOTSTRAP: "kafka:9092"
+      TOPIC_TELEMETRY: "hvac_telemetry"
+      TOPIC_STATUS:    "hvac_status"
+      LOG_LEVEL:       "INFO"
+    networks:
+      - streams_default
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  # ── 2. ML Consumer: Kafka → Random Forest → Postgres ─────────────────────
+  hvac_consumer:
+    build: ./hvac_consumer
+    container_name: hvac_consumer
+    restart: unless-stopped
+    environment:
+      KAFKA_BOOTSTRAP:  "kafka:9092"
+      TOPIC_TELEMETRY:  "hvac_telemetry"
+      TOPIC_ALERTS:     "hvac_alerts"
+      TOPIC_STATUS:     "hvac_status"
+      CONSUMER_GROUP:   "hvac_ml_group"
+      POSTGRES_DSN:     "postgresql://kafka:kafka@postgres:5432/events"
+      MODEL_PATH:       "/app/model/hvac_rf_model.pkl"
+      ALERT_THRESHOLD:  "0.4"
+      RETENTION_HOURS:  "24"
+      LOG_LEVEL:        "INFO"
+    volumes:
+      - ./ml_model:/app/model:ro   # model .pkl mounted read-only
+    networks:
+      - streams_default
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import os; os.path.exists('/app/model/hvac_rf_model.pkl') or exit(1)"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
