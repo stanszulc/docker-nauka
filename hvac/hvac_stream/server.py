@@ -63,6 +63,8 @@ class TelemetryEvent(BaseModel):
     failure_type: str   = Field(..., max_length=50)
     severity:     Literal["OK", "WARNING", "CRITICAL"]
     ts:           str   = Field(..., description="ISO 8601 timestamp from device")
+    event_type:   str   = Field("telemetry", description="telemetry | service")
+    resolved_failure: str | None = Field(None, description="failure type resolved by service")
 
     @field_validator("failure_type")
     @classmethod
