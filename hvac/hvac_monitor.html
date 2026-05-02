@@ -1,4 +1,3 @@
-hvac-monitor.html
 <!doctype html>
 <html lang="pl">
 <head>
@@ -75,6 +74,36 @@ function normalState(type='L'){
     torque:   gauss(R.torque.mean,   R.torque.std,   R.torque.min,   R.torque.max),
     tool_wear:gauss(R.tool_wear.mean,R.tool_wear.std,R.tool_wear.min,R.tool_wear.max),
     vibration:gauss(R.vibration.mean,R.vibration.std,R.vibration.min,R.vibration.max),
+  };
+}
+
+// ── Device profile — losowany raz przy starcie sesji ──────────────────────
+// Każde urządzenie ma nieco inne charakterystyki — odchylenie ±std od nominalnych
+// współczynników krzywych anomalii. To symuluje zróżnicowanie fizycznych maszyn.
+function generateDeviceProfile(){
+  // Każdy parametr losowany z rozkładu normalnego wokół wartości nominalnej
+  // std=0.25 oznacza ±25% odchylenie od wartości bazowej
+  function rv(nominal,std){return clamp(nominal*(1+randn()*std),nominal*0.4,nominal*2.2);}
+  return {
+    // HEAT: szybkość narastania temperatury i stała czasowa
+    heatRate:    rv(0.07,  0.30),   // K/s bazowa
+    heatDecay:   rv(120,   0.25),   // stała czasowa wykładniczej [s]
+    heatRpmDrop: rv(1.2,   0.35),   // rpm/s spadek przy HEAT
+    // CLOG: narastanie momentu i temperatury
+    clogTorque:  rv(0.20,  0.30),   // Nm/s
+    clogTemp:    rv(0.04,  0.30),   // K/s
+    clogRpm:     rv(0.6,   0.35),   // rpm/s spadek
+    // BEARING: amplituda wibracji
+    bearingAmp:  rv(0.007, 0.35),   // amplituda na akumulator
+    bearingMax:  rv(1.8,   0.20),   // max amplituda
+    // DRIFT: bias temperatury
+    driftAir:    rv(0.020, 0.30),   // K/s bias air_temp
+    driftProc:   rv(0.022, 0.30),   // K/s bias proc_temp
+    // WEAR: szybkość zużycia
+    wearRate:    rv(0.50,  0.35),   // min/s
+    // POWER: spadek RPM
+    powerDrop:   rv(7.0,   0.30),   // rpm bazowy drop
+    powerDecay:  rv(25,    0.25),   // stała czasowa
   };
 }
 
@@ -217,7 +246,7 @@ function LoginScreen({onConnect}){
 
   const handleConnect=()=>{
     if(!id.trim()||!gpsReady) return;
-    onConnect({deviceId:id.trim().toUpperCase(),serverUrl:url.trim(),type,gps:{lat:parseFloat(latStr),lng:parseFloat(lngStr)}});
+    onConnect({deviceId:id.trim().toUpperCase(),serverUrl:url.trim(),type,gps:{lat:parseFloat(latStr),lng:parseFloat(lngStr)},profile:generateDeviceProfile()});
   };
 
   const lbl={display:'block',fontSize:10,letterSpacing:3,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:8};
@@ -334,6 +363,10 @@ function MonitorScreen({config}){
     setSs({...stateRef.current});
   },[config]);
 
+  // Bufor próbek do uśredniania (10 próbek = 10s przy ticku 1s)
+  const bufferRef=useRef([]);
+  const BUFFER_SIZE=10;
+
   useEffect(()=>{
     if(burned||machineFailure) return;
     const id=setInterval(()=>{
@@ -370,47 +403,44 @@ function MonitorScreen({config}){
         nx.tool_wear=clamp(cur.tool_wear+0.04,R.tool_wear.min,R.tool_wear.max);
 
       // 3. Gradual anomaly curves (accumulator-driven)
+      // Profil urządzenia — losowane przy starcie, unikalne per sesja
+      const pr=config.profile;
+
       if(m.has('HEAT')){
         ac.HEAT++;
-        // exponential rise: 0.07 K/s → 0.22 K/s after 60 s
-        const rate=0.07*Math.exp(ac.HEAT/120);
+        const rate=pr.heatRate*Math.exp(ac.HEAT/pr.heatDecay);
         nx.proc_temp=clamp(nx.proc_temp+rate+randn()*0.015,R.proc_temp.min,R.proc_temp.max);
-        nx.rpm=clamp(nx.rpm-1.2+randn()*3,R.rpm.min,R.rpm.max);
+        nx.rpm=clamp(nx.rpm-pr.heatRpmDrop+randn()*3,R.rpm.min,R.rpm.max);
       } else { ac.HEAT=Math.max(0,ac.HEAT-2); }
 
       if(m.has('CLOG')){
         ac.CLOG++;
-        // torque rises ~0.2 Nm/s, proc_temp slower ~0.04 K/s
-        nx.torque=clamp(nx.torque+0.20+randn()*0.04,R.torque.min,R.torque.max);
-        nx.proc_temp=clamp(nx.proc_temp+0.04+randn()*0.01,R.proc_temp.min,R.proc_temp.max);
-        nx.rpm=clamp(nx.rpm-0.6+randn()*2,R.rpm.min,R.rpm.max);
+        nx.torque=clamp(nx.torque+pr.clogTorque+randn()*0.04,R.torque.min,R.torque.max);
+        nx.proc_temp=clamp(nx.proc_temp+pr.clogTemp+randn()*0.01,R.proc_temp.min,R.proc_temp.max);
+        nx.rpm=clamp(nx.rpm-pr.clogRpm+randn()*2,R.rpm.min,R.rpm.max);
       } else { ac.CLOG=Math.max(0,ac.CLOG-1); }
 
       if(m.has('BEARING')){
         ac.BEARING++;
-        // vibration builds sinusoidally with growing amplitude
-        const amp=clamp(0.04+ac.BEARING*0.007,0.04,1.8);
+        const amp=clamp(0.04+ac.BEARING*pr.bearingAmp,0.04,pr.bearingMax);
         nx.vibration=clamp(amp*(0.7+0.3*Math.sin(ac.BEARING*0.9))+Math.abs(randn()*0.015),0.01,2.0);
         nx.torque=clamp(nx.torque+randn()*0.35,R.torque.min,R.torque.max);
       } else { ac.BEARING=Math.max(0,ac.BEARING-2); }
 
       if(m.has('DRIFT')){
         ac.DRIFT++;
-        // slow linear bias +0.02 K/s on both sensors
-        nx.air_temp= clamp(nx.air_temp +0.020+randn()*0.004,R.air_temp.min, R.air_temp.max);
-        nx.proc_temp=clamp(nx.proc_temp+0.022+randn()*0.004,R.proc_temp.min,R.proc_temp.max);
+        nx.air_temp= clamp(nx.air_temp +pr.driftAir +randn()*0.004,R.air_temp.min, R.air_temp.max);
+        nx.proc_temp=clamp(nx.proc_temp+pr.driftProc+randn()*0.004,R.proc_temp.min,R.proc_temp.max);
       } else { ac.DRIFT=Math.max(0,ac.DRIFT-1); }
 
       if(m.has('WEAR')){
         ac.WEAR++;
-        // accelerated tool wear: +0.5 min/s
-        nx.tool_wear=clamp(nx.tool_wear+0.50,R.tool_wear.min,R.tool_wear.max);
+        nx.tool_wear=clamp(nx.tool_wear+pr.wearRate,R.tool_wear.min,R.tool_wear.max);
       } else { ac.WEAR=Math.max(0,ac.WEAR-1); }
 
       if(m.has('POWER')){
         ac.POWER++;
-        // rpm drops fast initially then stabilises lower
-        const drop=7*Math.exp(-ac.POWER/25)+0.8;
+        const drop=pr.powerDrop*Math.exp(-ac.POWER/pr.powerDecay)+0.8;
         nx.rpm=clamp(nx.rpm-drop+randn()*4,R.rpm.min,R.rpm.max);
         nx.torque=clamp(nx.torque+(Math.random()-0.5)*2.5,R.torque.min,R.torque.max);
       } else { ac.POWER=Math.max(0,ac.POWER-2); }
@@ -441,10 +471,51 @@ function MonitorScreen({config}){
         setFailurePersist(0);
       }
 
-      const payload={device_id:config.deviceId,type:config.type,lat:+config.gps.lat.toFixed(4),lng:+config.gps.lng.toFixed(4),air_temp:+nx.air_temp.toFixed(2),proc_temp:+nx.proc_temp.toFixed(2),rpm:Math.round(nx.rpm),torque:+nx.torque.toFixed(2),tool_wear:Math.round(nx.tool_wear),vibration:+nx.vibration.toFixed(3),ml_score:+sc.toFixed(3),failure_type:f.length?f.join(','):'None',severity:sev(sc),event_type:'telemetry',ts:new Date().toISOString()};
+      // Dodaj próbkę do bufora
+      bufferRef.current.push({
+        air_temp:nx.air_temp, proc_temp:nx.proc_temp, rpm:nx.rpm,
+        torque:nx.torque, tool_wear:nx.tool_wear, vibration:nx.vibration,
+        ml_score:sc, f, sc
+      });
+
+      // Co BUFFER_SIZE próbek — wyślij średnią
       const ts=new Date().toLocaleTimeString('pl-PL');
-      setLog(p=>[{ts,payload,f,sc},...p].slice(0,30));
-      if(config.serverUrl){fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(3000)}).then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));}
+      if(bufferRef.current.length>=BUFFER_SIZE){
+        const buf=bufferRef.current;
+        const avg=(key)=>buf.reduce((s,p)=>s+p[key],0)/buf.length;
+        // Failure type z ostatniej próbki (najnowsza informacja)
+        const lastF=buf[buf.length-1].f;
+        const lastSc=buf[buf.length-1].sc;
+        const payload={
+          device_id:config.deviceId, type:config.type,
+          lat:+config.gps.lat.toFixed(4), lng:+config.gps.lng.toFixed(4),
+          air_temp:+avg('air_temp').toFixed(2),
+          proc_temp:+avg('proc_temp').toFixed(2),
+          rpm:Math.round(avg('rpm')),
+          torque:+avg('torque').toFixed(2),
+          tool_wear:Math.round(avg('tool_wear')),
+          vibration:+avg('vibration').toFixed(3),
+          ml_score:+avg('ml_score').toFixed(3),
+          failure_type:lastF.length?lastF.join(','):'None',
+          severity:sev(lastSc),
+          event_type:'telemetry',
+          ts:new Date().toISOString(),
+          // Profil urządzenia — dla generatora danych treningowych
+          device_profile:{
+            heatRate:+config.profile.heatRate.toFixed(4),
+            heatDecay:+config.profile.heatDecay.toFixed(1),
+            clogTorque:+config.profile.clogTorque.toFixed(4),
+            wearRate:+config.profile.wearRate.toFixed(4),
+          }
+        };
+        bufferRef.current=[];
+        setLog(p=>[{ts,payload,f:lastF,sc:lastSc},...p].slice(0,30));
+        if(config.serverUrl){fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(5000)}).then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));}
+      } else {
+        // Aktualizuj log lokalnie nawet gdy nie wysyłamy
+        const previewPayload={air_temp:+nx.air_temp.toFixed(2),proc_temp:+nx.proc_temp.toFixed(2),rpm:Math.round(nx.rpm),torque:+nx.torque.toFixed(2),tool_wear:Math.round(nx.tool_wear),vibration:+nx.vibration.toFixed(3),ml_score:+sc.toFixed(3),failure_type:f.length?f.join(','):'None',severity:sev(sc),buffering:`${bufferRef.current.length}/${BUFFER_SIZE}`};
+        setLog(p=>[{ts,payload:previewPayload,f,sc},...p].slice(0,30));
+      }
     },1000);
     return()=>clearInterval(id);
   },[burned,machineFailure,config]);
@@ -463,7 +534,7 @@ function MonitorScreen({config}){
         e('span',{style:{fontSize:11,letterSpacing:2,color:sc2}},`${config.deviceId} · ${config.type}`)
       ),
       e('div',{style:{display:'flex',gap:8,alignItems:'center'}},
-        e('span',{style:{fontSize:10,color:'var(--text-muted)',letterSpacing:1}},sendSt==='ok'?'↑ OK':sendSt==='err'?'↑ ERR':'● LIVE 1s'),
+        e('span',{style:{fontSize:10,color:'var(--text-muted)',letterSpacing:1}},sendSt==='ok'?'↑ OK 10s':sendSt==='err'?'↑ ERR':'● BUF '+bufferRef.current.length+'/10'),
         (machineFailure||burned)&&e('button',{onClick:doService,style:{background:'#1a0505',border:'1px solid var(--red)',borderRadius:5,color:'var(--red)',fontSize:10,letterSpacing:2,padding:'4px 10px',fontWeight:'bold'}},'🔧 SERVICE'),
         !machineFailure&&!burned&&e('button',{onClick:reset,style:{background:'transparent',border:'1px solid #1a3a1a',borderRadius:5,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'4px 10px'}},'RESET')
       )
