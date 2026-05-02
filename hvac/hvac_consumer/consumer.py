@@ -69,24 +69,30 @@ CREATE TABLE IF NOT EXISTS hvac_metrics (
 );
 
 CREATE TABLE IF NOT EXISTS hvac_alerts_log (
-    id           BIGSERIAL    PRIMARY KEY,
-    device_id    VARCHAR(50)  NOT NULL,
-    ts           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    lat          DOUBLE PRECISION,
-    lng          DOUBLE PRECISION,
-    ml_score     REAL,
-    failure_type VARCHAR(30),
-    severity     VARCHAR(10),
-    raw_event    JSONB
+    id               BIGSERIAL    PRIMARY KEY,
+    device_id        VARCHAR(50)  NOT NULL,
+    ts               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    lat              DOUBLE PRECISION,
+    lng              DOUBLE PRECISION,
+    ml_score         REAL,
+    failure_type     VARCHAR(30),
+    severity         VARCHAR(10),
+    event_type       VARCHAR(20)  DEFAULT 'telemetry',
+    resolved_failure VARCHAR(30),
+    raw_event        JSONB
 );
 
+CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type
+    ON hvac_alerts_log (event_type, ts DESC);
+
 CREATE TABLE IF NOT EXISTS hvac_device_status (
-    device_id    VARCHAR(50)  PRIMARY KEY,
-    lat          DOUBLE PRECISION,
-    lng          DOUBLE PRECISION,
-    online       BOOLEAN      DEFAULT TRUE,
-    last_seen    TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    last_severity VARCHAR(10) DEFAULT 'OK'
+    device_id         VARCHAR(50)  PRIMARY KEY,
+    lat               DOUBLE PRECISION,
+    lng               DOUBLE PRECISION,
+    online            BOOLEAN      DEFAULT TRUE,
+    last_seen         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    last_severity     VARCHAR(10)  DEFAULT 'OK',
+    last_failure_type VARCHAR(30)  DEFAULT 'None'
 );
 
 CREATE INDEX IF NOT EXISTS idx_hvac_metrics_device_ts
@@ -199,21 +205,24 @@ VALUES
 
 INSERT_ALERT = """
 INSERT INTO hvac_alerts_log
-  (device_id, ts, lat, lng, ml_score, failure_type, severity, raw_event)
+  (device_id, ts, lat, lng, ml_score, failure_type, severity,
+   event_type, resolved_failure, raw_event)
 VALUES
   (%(device_id)s, %(ts)s, %(lat)s, %(lng)s, %(ml_score)s,
-   %(failure_type)s, %(severity)s, %(raw_event)s)
+   %(failure_type)s, %(severity)s,
+   %(event_type)s, %(resolved_failure)s, %(raw_event)s)
 """
 
 UPSERT_STATUS = """
-INSERT INTO hvac_device_status (device_id, lat, lng, last_seen, last_severity)
-VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), %(severity)s)
+INSERT INTO hvac_device_status (device_id, lat, lng, last_seen, last_severity, last_failure_type)
+VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), %(severity)s, %(failure_type)s)
 ON CONFLICT (device_id) DO UPDATE SET
-  lat           = EXCLUDED.lat,
-  lng           = EXCLUDED.lng,
-  last_seen     = NOW(),
-  last_severity = EXCLUDED.last_severity,
-  online        = TRUE
+  lat               = EXCLUDED.lat,
+  lng               = EXCLUDED.lng,
+  last_seen         = NOW(),
+  last_severity     = EXCLUDED.last_severity,
+  last_failure_type = EXCLUDED.last_failure_type,
+  online            = TRUE
 """
 
 
@@ -241,22 +250,27 @@ def write_event(conn, event: dict, ml_score: float, failure_type: str, severity:
         cur.execute(INSERT_METRIC, row)
         # Update device status table (used by Grafana Geomap)
         cur.execute(UPSERT_STATUS, {
-            "device_id": event["device_id"],
-            "lat":       event.get("lat"),
-            "lng":       event.get("lng"),
-            "severity":  severity,
+            "device_id":    event["device_id"],
+            "lat":          event.get("lat"),
+            "lng":          event.get("lng"),
+            "severity":     severity,
+            "failure_type": failure_type if failure_type != "None" else "None",
         })
         # Write to alerts log if score exceeds threshold
-        if ml_score >= ALERT_THRESHOLD:
+        event_type = event.get("event_type", "telemetry")
+        # Always log service events; log telemetry only when above threshold
+        if ml_score >= ALERT_THRESHOLD or event_type == "service":
             cur.execute(INSERT_ALERT, {
-                "device_id":    event["device_id"],
-                "ts":           row["ts"],
-                "lat":          event.get("lat"),
-                "lng":          event.get("lng"),
-                "ml_score":     ml_score,
-                "failure_type": failure_type,
-                "severity":     severity,
-                "raw_event":    json.dumps(event),
+                "device_id":       event["device_id"],
+                "ts":              row["ts"],
+                "lat":             event.get("lat"),
+                "lng":             event.get("lng"),
+                "ml_score":        ml_score,
+                "failure_type":    failure_type,
+                "severity":        severity,
+                "event_type":      event_type,
+                "resolved_failure": event.get("resolved_failure"),
+                "raw_event":       json.dumps(event),
             })
     conn.commit()
 
