@@ -46,6 +46,21 @@ const R={
 const OSF={H:11000,M:12000,L:13000};
 const BURN_THRESH=315.0, BURN_MAX=30;
 
+// AI4I 2020 failure definitions with shutdown conditions
+const FAILURE_DEFS={
+  HDF:{label:'Heat Dissipation Failure',desc:'Przegrzanie — brak chłodzenia',color:'#ff3344',
+       check:(s)=>{const dT=s.proc_temp-s.air_temp; return dT<8.6&&s.rpm<1380;}},
+  PWF:{label:'Power Failure',desc:'Awaria zasilania — moc poza zakresem',color:'#ff8800',
+       check:(s)=>{const pw=s.torque*(s.rpm*2*Math.PI/60); return pw<3500||pw>9000;}},
+  OSF:{label:'Overstrain Failure',desc:'Przeciążenie mechaniczne',color:'#ff4400',
+       check:(s,type)=>{return s.tool_wear*s.torque>(OSF[type]||13000);}},
+  TWF:{label:'Tool Wear Failure',desc:'Zużycie narzędzia krytyczne',color:'#ffaa00',
+       check:(s)=>{return s.tool_wear>=200&&s.tool_wear<=240;}},
+};
+
+// Failure persistence — failure must be active for N seconds before shutdown
+const FAILURE_PERSIST=5; // seconds before shutdown triggers
+
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
 function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
 function gauss(m,s,a,b){return clamp(m+randn()*s,a,b)}
@@ -266,9 +281,12 @@ function MonitorScreen({config}){
   const [score,setScore]=useState(0.05);
   const [burn,setBurn]=useState(0);
   const [burned,setBurned]=useState(false);
+  const [machineFailure,setMachineFailure]=useState(null); // null | {type, label, desc, color}
+  const [failurePersist,setFailurePersist]=useState(0); // seconds failure active
   const [log,setLog]=useState([]);
   const [sendSt,setSendSt]=useState('idle');
   const logRef=useRef(null);
+  const machineFailureRef=useRef(null);
 
   // Continuous physical state held in ref — mutated gradually each tick
   const stateRef=useRef(null);
@@ -284,13 +302,39 @@ function MonitorScreen({config}){
   const toggle=useCallback(k=>{if(burned)return;setModes(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;});},[burned]);
   const reset=useCallback(()=>{
     setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
+    setMachineFailure(null);setFailurePersist(0);
+    machineFailureRef.current=null;
     stateRef.current=normalState(config.type);
     accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,WEAR:0,POWER:0};
     setSs({...stateRef.current});
   },[config.type]);
 
+  // SERVICE button — sends maintenance event and resets
+  const doService=useCallback(()=>{
+    const mf=machineFailureRef.current;
+    const payload={device_id:config.deviceId,type:config.type,
+      lat:+config.gps.lat.toFixed(4),lng:+config.gps.lng.toFixed(4),
+      air_temp:+(stateRef.current?.air_temp||300).toFixed(2),
+      proc_temp:+(stateRef.current?.proc_temp||310).toFixed(2),
+      rpm:0,torque:0,tool_wear:0,vibration:0,
+      ml_score:0,failure_type:'None',severity:'OK',
+      maintenance:true,
+      maintenance_type:mf?mf.type:'RESET',
+      ts:new Date().toISOString()};
+    if(config.serverUrl){
+      fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(3000)})
+        .then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));
+    }
+    setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
+    setMachineFailure(null);setFailurePersist(0);
+    machineFailureRef.current=null;
+    stateRef.current=normalState(config.type);
+    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,WEAR:0,POWER:0};
+    setSs({...stateRef.current});
+  },[config]);
+
   useEffect(()=>{
-    if(burned) return;
+    if(burned||machineFailure) return;
     const id=setInterval(()=>{
       const cur=stateRef.current;
       const ac=accum.current;
@@ -375,8 +419,26 @@ function MonitorScreen({config}){
       const sc=mlScore(f,nx);
       setSs({...nx});setFails(f);setScore(sc);
 
+      // Thermal burn damage
       if(nx.proc_temp>=BURN_THRESH){setBurn(p=>{const n=p+1;if(n>=BURN_MAX)setBurned(true);return Math.min(n,BURN_MAX);});}
       else setBurn(p=>Math.max(0,p-0.3));
+
+      // Failure persistence — shutdown after FAILURE_PERSIST seconds of active failure
+      if(f.length>0){
+        setFailurePersist(p=>{
+          const n=p+1;
+          if(n>=FAILURE_PERSIST&&!machineFailureRef.current){
+            const ftype=f[0];
+            const fdef=FAILURE_DEFS[ftype];
+            const mf={type:ftype,label:fdef?fdef.label:ftype,desc:fdef?fdef.desc:'',color:fdef?fdef.color:'#ff3344'};
+            machineFailureRef.current=mf;
+            setMachineFailure(mf);
+          }
+          return Math.min(n,FAILURE_PERSIST+1);
+        });
+      } else {
+        setFailurePersist(0);
+      }
 
       const payload={device_id:config.deviceId,type:config.type,lat:+config.gps.lat.toFixed(4),lng:+config.gps.lng.toFixed(4),air_temp:+nx.air_temp.toFixed(2),proc_temp:+nx.proc_temp.toFixed(2),rpm:Math.round(nx.rpm),torque:+nx.torque.toFixed(2),tool_wear:Math.round(nx.tool_wear),vibration:+nx.vibration.toFixed(3),ml_score:+sc.toFixed(3),failure_type:f.length?f.join(','):'None',severity:sev(sc),ts:new Date().toISOString()};
       const ts=new Date().toLocaleTimeString('pl-PL');
@@ -384,7 +446,7 @@ function MonitorScreen({config}){
       if(config.serverUrl){fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(3000)}).then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));}
     },1000);
     return()=>clearInterval(id);
-  },[burned,config]);
+  },[burned,machineFailure,config]);
 
   useEffect(()=>{if(logRef.current)logRef.current.scrollTop=0;},[log.length]);
 
@@ -399,13 +461,25 @@ function MonitorScreen({config}){
         e('div',{style:{width:7,height:7,borderRadius:'50%',background:burned?'var(--red)':sc2}}),
         e('span',{style:{fontSize:11,letterSpacing:2,color:sc2}},`${config.deviceId} · ${config.type}`)
       ),
-      e('div',{style:{display:'flex',gap:10,alignItems:'center'}},
+      e('div',{style:{display:'flex',gap:8,alignItems:'center'}},
         e('span',{style:{fontSize:10,color:'var(--text-muted)',letterSpacing:1}},sendSt==='ok'?'↑ OK':sendSt==='err'?'↑ ERR':'● LIVE 1s'),
-        e('button',{onClick:reset,style:{background:'transparent',border:'1px solid #1a3a1a',borderRadius:5,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'4px 10px'}},'RESET')
+        (machineFailure||burned)&&e('button',{onClick:doService,style:{background:'#1a0505',border:'1px solid var(--red)',borderRadius:5,color:'var(--red)',fontSize:10,letterSpacing:2,padding:'4px 10px',fontWeight:'bold'}},'🔧 SERVICE'),
+        !machineFailure&&!burned&&e('button',{onClick:reset,style:{background:'transparent',border:'1px solid #1a3a1a',borderRadius:5,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'4px 10px'}},'RESET')
       )
     ),
     // fan
     e(Fan,{rpm:ss.rpm,vibration:ss.vibration,burned,modes}),
+    // machine failure overlay
+    machineFailure&&e('div',{style:{margin:'0 12px 8px',background:'#1a0505',border:`2px solid ${machineFailure.color}`,borderRadius:10,padding:'16px',textAlign:'center'}},
+      e('div',{style:{fontSize:10,letterSpacing:3,color:machineFailure.color,marginBottom:6}},'⚠ AWARIA MASZYNY — ZATRZYMANO'),
+      e('div',{style:{fontSize:14,color:machineFailure.color,letterSpacing:2,marginBottom:4}},machineFailure.type),
+      e('div',{style:{fontSize:11,color:'#aa4433',marginBottom:12}},machineFailure.desc),
+      e('button',{onClick:doService,style:{background:machineFailure.color,border:'none',borderRadius:8,color:'#000',fontSize:12,letterSpacing:3,padding:'12px 32px',fontWeight:'bold',cursor:'pointer'}},'🔧 SERWIS / PRZYWRÓĆ')
+    ),
+    burned&&!machineFailure&&e('div',{style:{margin:'0 12px 8px',background:'#1a0505',border:'2px solid var(--red)',borderRadius:10,padding:'16px',textAlign:'center'}},
+      e('div',{style:{fontSize:10,letterSpacing:3,color:'var(--red)',marginBottom:6}},'⚠ SILNIK SPALONY — PRZEGRZANIE'),
+      e('button',{onClick:doService,style:{background:'var(--red)',border:'none',borderRadius:8,color:'#000',fontSize:12,letterSpacing:3,padding:'12px 32px',fontWeight:'bold',cursor:'pointer',marginTop:8}},'🔧 WYMIEŃ SILNIK')
+    ),
     // burn bar
     burn>0&&!burned&&e('div',{style:{padding:'6px 16px 0'}},
       e('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:3}},
@@ -501,4 +575,3 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
 </script>
 </body>
 </html>
-
