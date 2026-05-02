@@ -18,7 +18,7 @@ services:
     container_name: hvac_stream
     restart: unless-stopped
     ports:
-      - "8001:8000"              # accessible at http://VM_IP:8001
+      - "8002:8000"              # accessible at http://VM_IP:8001
     environment:
       KAFKA_BOOTSTRAP: "kafka:9092"
       TOPIC_TELEMETRY: "hvac_telemetry"
