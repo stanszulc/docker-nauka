@@ -95,8 +95,6 @@ function generateDeviceProfile(){
     // DRIFT: bias temperatury
     driftAir:    rv(0.020, 0.30),   // K/s bias air_temp
     driftProc:   rv(0.022, 0.30),   // K/s bias proc_temp
-    // WEAR: szybkość zużycia
-    wearRate:    rv(0.50,  0.35),   // min/s
     // POWER: spadek RPM
     powerDrop:   rv(7.0,   0.30),   // rpm bazowy drop
     powerDecay:  rv(25,    0.25),   // stała czasowa
@@ -448,7 +446,7 @@ function MonitorScreen({config}){
         const lastF=buf[buf.length-1].f;
         const lastSc=buf[buf.length-1].sc;
         const payload={
-          device_id:config.deviceId, type:config.type,
+          device_id:config.deviceId,
           lat:+config.gps.lat.toFixed(4), lng:+config.gps.lng.toFixed(4),
           air_temp:+avg('air_temp').toFixed(2),
           proc_temp:+avg('proc_temp').toFixed(2),
@@ -465,7 +463,7 @@ function MonitorScreen({config}){
             heatRate:+config.profile.heatRate.toFixed(4),
             heatDecay:+config.profile.heatDecay.toFixed(1),
             clogTorque:+config.profile.clogTorque.toFixed(4),
-            wearRate:+config.profile.wearRate.toFixed(4),
+            bearingAmp:+config.profile.bearingAmp.toFixed(4),
           }
         };
         bufferRef.current=[];
