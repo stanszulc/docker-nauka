@@ -149,7 +149,7 @@ def run_retention(conn):
 # ── ML Model (XGBoost RUL) ────────────────────────────────────────────────────
 # Per-device rolling buffer for feature engineering (window=3 ticks)
 DEVICE_BUFFERS: dict = {}
-WINDOW = 3
+WINDOW = 20
 OSF_LIMITS = {'L': 13000, 'M': 12000, 'H': 11000}
 
 def load_model(path: str):
