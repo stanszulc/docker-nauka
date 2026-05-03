@@ -40,10 +40,8 @@ const R={
   proc_temp:{min:305.7,max:313.8,mean:310.0,std:1.48},
   rpm:      {min:1168, max:2886, mean:1538, std:179},
   torque:   {min:3.8,  max:76.6, mean:40.0, std:9.97},
-  tool_wear:{min:0,    max:253,  mean:108,  std:63},
   vibration:{min:0.01, max:2.0,  mean:0.04, std:0.02},
 };
-const OSF={H:11000,M:12000,L:13000};
 const BURN_THRESH=315.0, BURN_MAX=30;
 
 // AI4I 2020 failure definitions with shutdown conditions
@@ -52,27 +50,25 @@ const FAILURE_DEFS={
        check:(s)=>{const dT=s.proc_temp-s.air_temp; return dT<8.6&&s.rpm<1380;}},
   PWF:{label:'Power Failure',desc:'Awaria zasilania — moc poza zakresem',color:'#ff8800',
        check:(s)=>{const pw=s.torque*(s.rpm*2*Math.PI/60); return pw<3500||pw>9000;}},
-  OSF:{label:'Overstrain Failure',desc:'Przeciążenie mechaniczne',color:'#ff4400',
-       check:(s,type)=>{return s.tool_wear*s.torque>(OSF[type]||13000);}},
-  TWF:{label:'Tool Wear Failure',desc:'Zużycie narzędzia krytyczne',color:'#ffaa00',
-       check:(s)=>{return s.tool_wear>=200&&s.tool_wear<=240;}},
+  CLOG:{label:'Clogged Filter',desc:'Zapchany filtr — wzrost oporu przepływu',color:'#ff6600',
+       check:(s)=>{const dT=s.proc_temp-s.air_temp; return s.torque>60||dT>13.5;}},
+  BEARING:{label:'Bearing Failure',desc:'Uszkodzenie łożysk — wibracje',color:'#ffaa00',
+       check:(s)=>{return s.vibration>0.8;}},
 };
 
 // Failure persistence — failure must be active for N seconds before shutdown
-const FAILURE_PERSIST=5; // seconds before shutdown triggers
 
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
 function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
 function gauss(m,s,a,b){return clamp(m+randn()*s,a,b)}
 function toC(k){return k-273.15}
 
-function normalState(type='L'){
-  return {type,
+function normalState(){
+  return {
     air_temp: gauss(R.air_temp.mean, R.air_temp.std, R.air_temp.min, R.air_temp.max),
     proc_temp:gauss(R.proc_temp.mean,R.proc_temp.std,R.proc_temp.min,R.proc_temp.max),
     rpm:      gauss(R.rpm.mean,      R.rpm.std,      R.rpm.min,      R.rpm.max),
     torque:   gauss(R.torque.mean,   R.torque.std,   R.torque.min,   R.torque.max),
-    tool_wear:gauss(R.tool_wear.mean,R.tool_wear.std,R.tool_wear.min,R.tool_wear.max),
     vibration:gauss(R.vibration.mean,R.vibration.std,R.vibration.min,R.vibration.max),
   };
 }
@@ -113,28 +109,27 @@ function applyAnomaly(state,modes,baseRpm){
   if(modes.has('CLOG')){s.torque=clamp(s.torque*1.6+randn()*2,R.torque.min,R.torque.max);s.proc_temp=clamp(s.proc_temp+2.5,R.proc_temp.min,R.proc_temp.max);s.rpm=clamp(s.rpm-150,R.rpm.min,R.rpm.max)}
   if(modes.has('BEARING')){s.vibration=clamp(0.6+Math.random()*1.2,0.4,2.0);s.torque=clamp(s.torque+randn()*12,R.torque.min,R.torque.max)}
   if(modes.has('DRIFT')){s.air_temp=clamp(s.air_temp+1.8+randn()*0.8,R.air_temp.min,R.air_temp.max);s.proc_temp=clamp(s.proc_temp+2.2+randn()*0.8,R.proc_temp.min,R.proc_temp.max)}
-  if(modes.has('WEAR')){s.tool_wear=clamp(210+Math.random()*30,200,240)}
   if(modes.has('POWER')){s.torque=clamp(s.torque*0.25,R.torque.min,15);s.rpm=clamp(s.rpm*0.55,R.rpm.min,900)}
   return s;
 }
 
 function detectFailures(s){
-  const f=[], dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60), ol=OSF[s.type]||13000;
-  if(dT<8.6&&s.rpm<1380) f.push('HDF');
-  if(pw<3500||pw>9000)   f.push('PWF');
-  if(s.tool_wear*s.torque>ol) f.push('OSF');
-  if(s.tool_wear>=200&&s.tool_wear<=240) f.push('TWF');
+  const f=[], dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60);
+  if(dT<8.6&&s.rpm<1380)    f.push('HDF');
+  if(pw<3500||pw>9000)      f.push('PWF');
+  if(s.torque>60||dT>13.5) f.push('CLOG');
+  if(s.vibration>0.8)       f.push('BEARING');
   return f;
 }
 
 function mlScore(failures,s){
   if(!failures.length){
-    const dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60), ol=OSF[s.type]||13000;
+    const dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60);
     const h=clamp(1-(dT-8.6)/6,0,1)*clamp(1-(s.rpm-1380)/500,0,1);
     const p=pw<6500?clamp(1-(pw-3500)/3000,0,1):clamp((pw-6500)/2500,0,1);
-    const o=clamp((s.tool_wear*s.torque)/ol,0,1);
-    const w=s.tool_wear>160?clamp((s.tool_wear-160)/80,0,1):0;
-    return clamp(Math.max(h,p,o,w)*0.38+0.02,0.02,0.39);
+    const c=clamp((s.torque-40)/25,0,1);
+    const b=clamp((s.vibration-0.3)/0.5,0,1);
+    return clamp(Math.max(h,p,c,b)*0.38+0.02,0.02,0.39);
   }
   return clamp(0.42+(failures.length-1)*0.15+Math.random()*0.1,0.4,0.99);
 }
@@ -212,7 +207,6 @@ function Gauge({label,value,min,max,unit,warn,danger}){
 function LoginScreen({onConnect}){
   const [id,setId]=useState('HVAC_01');
   const [url,setUrl]=useState('http://92.5.14.76:8002');
-  const [type,setType]=useState('L');
   const [latStr,setLatStr]=useState('50.0521');
   const [lngStr,setLngStr]=useState('19.9345');
   const [gpsStatus,setGpsStatus]=useState('idle'); // idle | trying | ok | denied | unavailable
@@ -246,7 +240,7 @@ function LoginScreen({onConnect}){
 
   const handleConnect=()=>{
     if(!id.trim()||!gpsReady) return;
-    onConnect({deviceId:id.trim().toUpperCase(),serverUrl:url.trim(),type,gps:{lat:parseFloat(latStr),lng:parseFloat(lngStr)},profile:generateDeviceProfile()});
+    onConnect({deviceId:id.trim().toUpperCase(),serverUrl:url.trim(),gps:{lat:parseFloat(latStr),lng:parseFloat(lngStr)},profile:generateDeviceProfile()});
   };
 
   const lbl={display:'block',fontSize:10,letterSpacing:3,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:8};
@@ -260,13 +254,7 @@ function LoginScreen({onConnect}){
       e('label',{style:lbl},'Device ID'),
       e('input',{type:'text',value:id,onChange:ev=>setId(ev.target.value),placeholder:'np. HVAC_01',style:{textTransform:'uppercase',letterSpacing:2}})
     ),
-    e('div',{style:{marginBottom:18}},
-      e('label',{style:lbl},'Typ produktu (AI4I 2020)'),
-      e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:8}},
-        ['L','M','H'].map(t=>e('button',{key:t,onClick:()=>setType(t),style:{background:type===t?'var(--green-dark)':'var(--bg3)',border:`1px solid ${type===t?'var(--green-dim)':'var(--border)'}`,borderRadius:8,color:type===t?'var(--green)':'var(--text-muted)',fontSize:14,letterSpacing:3,padding:'12px 0',transition:'all .15s'}},t))
-      ),
-      e('div',{style:{fontSize:10,color:'var(--text-muted)',marginTop:6,letterSpacing:1}},'L = niska (60%)  ·  M = średnia (30%)  ·  H = wysoka (10%)')
-    ),
+
     e('div',{style:{marginBottom:18}},
       e('label',{style:lbl},'Lokalizacja GPS'),
       e('div',{style:{display:'flex',gap:6,marginBottom:6}},
@@ -296,33 +284,29 @@ function LoginScreen({onConnect}){
 // ── Monitor Screen ───────────────────────────────────────────────────────────
 const ANOMALY_BTNS=[
   {key:'HEAT',   label:'Heat source',   sub:'proc_temp ↑  rpm ↓', icon:'▲'},
-  {key:'CLOG',   label:'Clog inlet',    sub:'torque ↑  rpm ↓',    icon:'▼'},
+  {key:'CLOG',   label:'Clog inlet',    sub:'torque ↑  temp ↑',   icon:'▼'},
   {key:'BEARING',label:'Bearing damage',sub:'vibration ↑↑',       icon:'⚡'},
   {key:'DRIFT',  label:'Sensor drift',  sub:'temp bias slow',      icon:'~'},
-  {key:'WEAR',   label:'Tool wear',     sub:'wear → 210 min',      icon:'◆'},
   {key:'POWER',  label:'Power issue',   sub:'power ↓  /  PWF',     icon:'✕'},
 ];
 
 function MonitorScreen({config}){
   const [baseRpm,setBaseRpm]=useState(1538);
   const [modes,setModes]=useState(new Set());
-  const [ss,setSs]=useState(()=>normalState(config.type));
+  const [ss,setSs]=useState(()=>normalState());
   const [fails,setFails]=useState([]);
   const [score,setScore]=useState(0.05);
   const [burn,setBurn]=useState(0);
   const [burned,setBurned]=useState(false);
-  const [machineFailure,setMachineFailure]=useState(null); // null | {type, label, desc, color}
-  const [failurePersist,setFailurePersist]=useState(0); // seconds failure active
   const [log,setLog]=useState([]);
   const [sendSt,setSendSt]=useState('idle');
   const logRef=useRef(null);
-  const machineFailureRef=useRef(null);
 
   // Continuous physical state held in ref — mutated gradually each tick
   const stateRef=useRef(null);
-  if(!stateRef.current) stateRef.current=normalState(config.type);
+  if(!stateRef.current) stateRef.current=normalState();
   // Accumulator: how many seconds each anomaly has been active
-  const accum=useRef({HEAT:0,CLOG:0,BEARING:0,DRIFT:0,WEAR:0,POWER:0});
+  const accum=useRef({HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0});
   // Refs so interval closure always sees latest values without re-registering
   const modesRef=useRef(modes);
   useEffect(()=>{modesRef.current=modes;},[modes]);
@@ -332,34 +316,32 @@ function MonitorScreen({config}){
   const toggle=useCallback(k=>{if(burned)return;setModes(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;});},[burned]);
   const reset=useCallback(()=>{
     setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
-    setMachineFailure(null);setFailurePersist(0);
-    machineFailureRef.current=null;
-    stateRef.current=normalState(config.type);
-    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,WEAR:0,POWER:0};
+    stateRef.current=normalState();
+    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0};
     setSs({...stateRef.current});
   },[config.type]);
 
-  // SERVICE button — sends maintenance event and resets
+  // SERVICE button — sends maintenance event and resets anomaly modes
   const doService=useCallback(()=>{
-    const mf=machineFailureRef.current;
-    const payload={device_id:config.deviceId,type:config.type,
+    const lastFails=stateRef.current?detectFailures(stateRef.current):[];
+    const payload={device_id:config.deviceId,
       lat:+config.gps.lat.toFixed(4),lng:+config.gps.lng.toFixed(4),
       air_temp:+(stateRef.current?.air_temp||300).toFixed(2),
       proc_temp:+(stateRef.current?.proc_temp||310).toFixed(2),
-      rpm:0,torque:0,tool_wear:0,vibration:0,
+      rpm:Math.round(stateRef.current?.rpm||0),
+      torque:+(stateRef.current?.torque||0).toFixed(2),
+      vibration:+(stateRef.current?.vibration||0).toFixed(3),
       ml_score:0,failure_type:'None',severity:'OK',
       event_type:'service',
-      resolved_failure:mf?mf.type:'RESET',
+      resolved_failure:lastFails.length?lastFails.join(','):'RESET',
       ts:new Date().toISOString()};
     if(config.serverUrl){
       fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(3000)})
         .then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));
     }
     setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
-    setMachineFailure(null);setFailurePersist(0);
-    machineFailureRef.current=null;
-    stateRef.current=normalState(config.type);
-    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,WEAR:0,POWER:0};
+    stateRef.current=normalState();
+    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0};
     setSs({...stateRef.current});
   },[config]);
 
@@ -368,7 +350,7 @@ function MonitorScreen({config}){
   const BUFFER_SIZE=10;
 
   useEffect(()=>{
-    if(burned||machineFailure) return;
+    if(burned) return;
     const id=setInterval(()=>{
       const cur=stateRef.current;
       const ac=accum.current;
@@ -398,9 +380,6 @@ function MonitorScreen({config}){
       // rpm tracks baseRpm slider with slight lag
       nx.rpm=clamp(cur.rpm+(brpm-cur.rpm)*0.05+randn()*N*R.rpm.std,R.rpm.min,R.rpm.max);
 
-      // tool_wear grows very slowly on its own
-      if(!m.has('WEAR'))
-        nx.tool_wear=clamp(cur.tool_wear+0.04,R.tool_wear.min,R.tool_wear.max);
 
       // 3. Gradual anomaly curves (accumulator-driven)
       // Profil urządzenia — losowane przy starcie, unikalne per sesja
@@ -433,10 +412,6 @@ function MonitorScreen({config}){
         nx.proc_temp=clamp(nx.proc_temp+pr.driftProc+randn()*0.004,R.proc_temp.min,R.proc_temp.max);
       } else { ac.DRIFT=Math.max(0,ac.DRIFT-1); }
 
-      if(m.has('WEAR')){
-        ac.WEAR++;
-        nx.tool_wear=clamp(nx.tool_wear+pr.wearRate,R.tool_wear.min,R.tool_wear.max);
-      } else { ac.WEAR=Math.max(0,ac.WEAR-1); }
 
       if(m.has('POWER')){
         ac.POWER++;
@@ -454,27 +429,13 @@ function MonitorScreen({config}){
       if(nx.proc_temp>=BURN_THRESH){setBurn(p=>{const n=p+1;if(n>=BURN_MAX)setBurned(true);return Math.min(n,BURN_MAX);});}
       else setBurn(p=>Math.max(0,p-0.3));
 
-      // Failure persistence — shutdown after FAILURE_PERSIST seconds of active failure
-      if(f.length>0){
-        setFailurePersist(p=>{
-          const n=p+1;
-          if(n>=FAILURE_PERSIST&&!machineFailureRef.current){
-            const ftype=f[0];
-            const fdef=FAILURE_DEFS[ftype];
-            const mf={type:ftype,label:fdef?fdef.label:ftype,desc:fdef?fdef.desc:'',color:fdef?fdef.color:'#ff3344'};
-            machineFailureRef.current=mf;
-            setMachineFailure(mf);
-          }
-          return Math.min(n,FAILURE_PERSIST+1);
-        });
-      } else {
-        setFailurePersist(0);
-      }
+      // Failure active — strumień danych nie jest zatrzymywany (POC mode)
+      // Operator widzi historię awarii w Grafanie jako ciągły trend
 
       // Dodaj próbkę do bufora
       bufferRef.current.push({
         air_temp:nx.air_temp, proc_temp:nx.proc_temp, rpm:nx.rpm,
-        torque:nx.torque, tool_wear:nx.tool_wear, vibration:nx.vibration,
+        torque:nx.torque, vibration:nx.vibration,
         ml_score:sc, f, sc
       });
 
@@ -493,8 +454,7 @@ function MonitorScreen({config}){
           proc_temp:+avg('proc_temp').toFixed(2),
           rpm:Math.round(avg('rpm')),
           torque:+avg('torque').toFixed(2),
-          tool_wear:Math.round(avg('tool_wear')),
-          vibration:+avg('vibration').toFixed(3),
+            vibration:+avg('vibration').toFixed(3),
           ml_score:+avg('ml_score').toFixed(3),
           failure_type:lastF.length?lastF.join(','):'None',
           severity:sev(lastSc),
@@ -513,12 +473,12 @@ function MonitorScreen({config}){
         if(config.serverUrl){fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(5000)}).then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));}
       } else {
         // Aktualizuj log lokalnie nawet gdy nie wysyłamy
-        const previewPayload={air_temp:+nx.air_temp.toFixed(2),proc_temp:+nx.proc_temp.toFixed(2),rpm:Math.round(nx.rpm),torque:+nx.torque.toFixed(2),tool_wear:Math.round(nx.tool_wear),vibration:+nx.vibration.toFixed(3),ml_score:+sc.toFixed(3),failure_type:f.length?f.join(','):'None',severity:sev(sc),buffering:`${bufferRef.current.length}/${BUFFER_SIZE}`};
+        const previewPayload={air_temp:+nx.air_temp.toFixed(2),proc_temp:+nx.proc_temp.toFixed(2),rpm:Math.round(nx.rpm),torque:+nx.torque.toFixed(2),vibration:+nx.vibration.toFixed(3),ml_score:+sc.toFixed(3),failure_type:f.length?f.join(','):'None',severity:sev(sc),buffering:`${bufferRef.current.length}/${BUFFER_SIZE}`};
         setLog(p=>[{ts,payload:previewPayload,f,sc},...p].slice(0,30));
       }
     },1000);
     return()=>clearInterval(id);
-  },[burned,machineFailure,config]);
+  },[burned,config]);
 
   useEffect(()=>{if(logRef.current)logRef.current.scrollTop=0;},[log.length]);
 
@@ -531,26 +491,27 @@ function MonitorScreen({config}){
     e('div',{style:{background:'var(--bg2)',borderBottom:`1px solid ${burned||sv==='CRITICAL'?'#3a1010':'#0d1f0d'}`,padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
       e('div',{style:{display:'flex',alignItems:'center',gap:8}},
         e('div',{style:{width:7,height:7,borderRadius:'50%',background:burned?'var(--red)':sc2}}),
-        e('span',{style:{fontSize:11,letterSpacing:2,color:sc2}},`${config.deviceId} · ${config.type}`)
+        e('span',{style:{fontSize:11,letterSpacing:2,color:sc2}},`${config.deviceId}`)
       ),
       e('div',{style:{display:'flex',gap:8,alignItems:'center'}},
         e('span',{style:{fontSize:10,color:'var(--text-muted)',letterSpacing:1}},sendSt==='ok'?'↑ OK 10s':sendSt==='err'?'↑ ERR':'● BUF '+bufferRef.current.length+'/10'),
-        (machineFailure||burned)&&e('button',{onClick:doService,style:{background:'#1a0505',border:'1px solid var(--red)',borderRadius:5,color:'var(--red)',fontSize:10,letterSpacing:2,padding:'4px 10px',fontWeight:'bold'}},'🔧 SERVICE'),
-        !machineFailure&&!burned&&e('button',{onClick:reset,style:{background:'transparent',border:'1px solid #1a3a1a',borderRadius:5,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'4px 10px'}},'RESET')
+        fails.length>0&&!burned&&e('button',{onClick:doService,style:{background:'#1a0505',border:'1px solid var(--red)',borderRadius:5,color:'var(--red)',fontSize:10,letterSpacing:2,padding:'4px 10px',fontWeight:'bold'}},'🔧 SERVICE'),
+        !burned&&e('button',{onClick:reset,style:{background:'transparent',border:'1px solid #1a3a1a',borderRadius:5,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'4px 10px'}},'RESET')
       )
     ),
     // fan
     e(Fan,{rpm:ss.rpm,vibration:ss.vibration,burned,modes}),
-    // machine failure overlay
-    machineFailure&&e('div',{style:{margin:'0 12px 8px',background:'#1a0505',border:`2px solid ${machineFailure.color}`,borderRadius:10,padding:'16px',textAlign:'center'}},
-      e('div',{style:{fontSize:10,letterSpacing:3,color:machineFailure.color,marginBottom:6}},'⚠ AWARIA MASZYNY — ZATRZYMANO'),
-      e('div',{style:{fontSize:14,color:machineFailure.color,letterSpacing:2,marginBottom:4}},machineFailure.type),
-      e('div',{style:{fontSize:11,color:'#aa4433',marginBottom:12}},machineFailure.desc),
-      e('button',{onClick:doService,style:{background:machineFailure.color,border:'none',borderRadius:8,color:'#000',fontSize:12,letterSpacing:3,padding:'12px 32px',fontWeight:'bold',cursor:'pointer'}},'🔧 SERWIS / PRZYWRÓĆ')
+    // Active failure banner — dane nadal płyną (POC mode)
+    fails.length>0&&!burned&&e('div',{style:{margin:'0 12px 4px',background:'#1a0505',border:'1px solid #3a1010',borderRadius:8,padding:'8px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        e('span',{style:{fontSize:10,color:'var(--red)',letterSpacing:2}},'⚠ AWARIA AKTYWNA:'),
+        e('span',{style:{fontSize:11,color:'#ff6655',letterSpacing:1}},fails.join(' + '))
+      ),
+      e('button',{onClick:doService,style:{background:'var(--red)',border:'none',borderRadius:6,color:'#000',fontSize:10,letterSpacing:2,padding:'5px 12px',fontWeight:'bold',cursor:'pointer'}},'🔧 SERVICE')
     ),
-    burned&&!machineFailure&&e('div',{style:{margin:'0 12px 8px',background:'#1a0505',border:'2px solid var(--red)',borderRadius:10,padding:'16px',textAlign:'center'}},
-      e('div',{style:{fontSize:10,letterSpacing:3,color:'var(--red)',marginBottom:6}},'⚠ SILNIK SPALONY — PRZEGRZANIE'),
-      e('button',{onClick:doService,style:{background:'var(--red)',border:'none',borderRadius:8,color:'#000',fontSize:12,letterSpacing:3,padding:'12px 32px',fontWeight:'bold',cursor:'pointer',marginTop:8}},'🔧 WYMIEŃ SILNIK')
+    burned&&e('div',{style:{margin:'0 12px 4px',background:'#1a0505',border:'2px solid var(--red)',borderRadius:8,padding:'8px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('span',{style:{fontSize:10,color:'var(--red)',letterSpacing:2}},'⚠ SILNIK SPALONY'),
+      e('button',{onClick:doService,style:{background:'var(--red)',border:'none',borderRadius:6,color:'#000',fontSize:10,letterSpacing:2,padding:'5px 12px',fontWeight:'bold',cursor:'pointer'}},'🔧 WYMIEŃ')
     ),
     // burn bar
     burn>0&&!burned&&e('div',{style:{padding:'6px 16px 0'}},
@@ -574,7 +535,7 @@ function MonitorScreen({config}){
     ),
     // failure badges
     e('div',{style:{padding:'8px 16px',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
-      ['HDF','PWF','OSF','TWF'].map(k=>e('div',{key:k,style:{fontSize:9,letterSpacing:2,padding:'4px 10px',borderRadius:5,border:`1px solid ${fails.includes(k)?'#3a1010':'#0d1f0d'}`,background:fails.includes(k)?'var(--red-dark)':'#0a0c0a',color:fails.includes(k)?'var(--red)':'var(--text-muted)',transition:'all .3s'}},k)),
+      ['HDF','PWF','CLOG','BEARING'].map(k=>e('div',{key:k,style:{fontSize:9,letterSpacing:2,padding:'4px 10px',borderRadius:5,border:`1px solid ${fails.includes(k)?'#3a1010':'#0d1f0d'}`,background:fails.includes(k)?'var(--red-dark)':'#0a0c0a',color:fails.includes(k)?'var(--red)':'var(--text-muted)',transition:'all .3s'}},k)),
       e('div',{style:{fontSize:9,color:'var(--text-muted)',marginLeft:'auto',letterSpacing:1}},`ΔT ${dT.toFixed(1)}K · ${(pw/1000).toFixed(1)}kW`)
     ),
     // gauges
@@ -586,7 +547,7 @@ function MonitorScreen({config}){
         e(Gauge,{label:'RPM',value:ss.rpm,min:R.rpm.min,max:R.rpm.max,unit:'rpm',warn:2500}),
         e(Gauge,{label:'TORQUE',value:ss.torque,min:R.torque.min,max:R.torque.max,unit:'Nm',warn:60,danger:70}),
         e(Gauge,{label:'VIBRATION',value:ss.vibration,min:0,max:2,unit:'mm/s²',warn:0.4,danger:0.9}),
-        e(Gauge,{label:'TOOL WEAR',value:ss.tool_wear,min:0,max:253,unit:'min',warn:180,danger:200})
+
       )
     ),
     // anomaly injector
