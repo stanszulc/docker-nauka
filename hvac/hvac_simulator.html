@@ -1,1 +1,452 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>HVAC Simulator</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#00ff88;--green-dim:#00cc66;--green-dark:#003a1a;
+  --amber:#ffaa00;--red:#ff3344;--red-dark:#1a0005;--purple:#9b59b6;
+  --bg:#0a0c0a;--bg2:#0f120f;--bg3:#141814;--border:#1a2a1a;
+  --text:#00ff88;--text-dim:#00aa55;--text-muted:#336644;
+  --mono:'Share Tech Mono','Courier New',monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);-webkit-font-smoothing:antialiased}
+button{font-family:var(--mono);cursor:pointer;border:none;outline:none}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--green-dark);border-radius:2px}
 
+.container{max-width:900px;margin:0 auto;padding:16px}
+.header{padding:16px 0 24px;border-bottom:1px solid var(--border);margin-bottom:20px}
+.header-title{font-size:10px;letter-spacing:5px;color:var(--text-dim);margin-bottom:4px}
+.header-sub{font-size:20px;color:var(--text)}
+.config-row{display:flex;gap:12px;margin-bottom:20px;align-items:flex-end;flex-wrap:wrap}
+.config-group{display:flex;flex-direction:column;gap:6px}
+.config-label{font-size:9px;letter-spacing:2px;color:var(--text-muted)}
+.config-input{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:13px;padding:8px 12px;width:200px;outline:none}
+.config-input-sm{width:100px}
+.btn{border-radius:8px;font-size:11px;letter-spacing:3px;padding:10px 20px;transition:all .15s;cursor:pointer}
+.btn-start{background:var(--green-dark);border:1px solid var(--green-dim);color:var(--green)}
+.btn-stop{background:var(--red-dark);border:1px solid var(--red);color:var(--red)}
+.btn-disabled{background:#0a0a0a;border:1px solid var(--border);color:var(--text-muted);cursor:not-allowed}
+
+.stats-row{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:20px}
+.stat{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px;text-align:center}
+.stat-val{font-size:22px;color:var(--green);margin-bottom:2px}
+.stat-label{font-size:9px;letter-spacing:2px;color:var(--text-muted)}
+.stat-val.red{color:var(--red)}
+.stat-val.amber{color:var(--amber)}
+.stat-val.purple{color:var(--purple)}
+
+.devices-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;margin-bottom:20px}
+.device-card{background:var(--bg2);border:1px solid var(--border);border-radius:8px;padding:10px}
+.device-card.failure{border-color:#3a1010;background:#0d0505}
+.device-card.service{border-color:#1a3a00;background:#050d05}
+.device-id{font-size:10px;letter-spacing:2px;color:var(--text-dim);margin-bottom:6px}
+.device-status{font-size:11px;letter-spacing:1px;margin-bottom:4px}
+.device-status.ok{color:var(--green)}
+.device-status.warning{color:var(--amber)}
+.device-status.failure{color:var(--red)}
+.device-status.service{color:#44ff44}
+.device-metric{font-size:9px;color:var(--text-muted);margin-top:2px}
+.device-rul{font-size:10px;color:var(--amber);margin-top:4px}
+.device-timer{font-size:9px;color:var(--text-muted);margin-top:2px}
+
+.log-section{margin-top:4px}
+.log-title{font-size:9px;letter-spacing:3px;color:var(--text-muted);margin-bottom:8px}
+.log-box{background:#060c06;border:1px solid #0a1a0a;border-radius:8px;padding:10px 12px;height:200px;overflow-y:auto}
+.log-line{font-size:9px;line-height:1.8;color:var(--text-muted)}
+.log-line.ok{color:#1a5a2a}
+.log-line.warn{color:var(--amber)}
+.log-line.fail{color:var(--red)}
+.log-line.svc{color:#44ff44}
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-title">HVAC PREDICTIVE MAINTENANCE</div>
+    <div class="header-sub">Automated Multi-Device Simulator</div>
+  </div>
+
+  <div class="config-row">
+    <div class="config-group">
+      <div class="config-label">Server URL</div>
+      <input class="config-input" id="serverUrl" value="http://92.5.14.76:8002"/>
+    </div>
+    <div class="config-group">
+      <div class="config-label">Failure duration (s)</div>
+      <input class="config-input config-input-sm" id="failureDuration" value="30" type="number" min="5" max="300"/>
+    </div>
+    <div class="config-group">
+      <div class="config-label">Send interval (s)</div>
+      <input class="config-input config-input-sm" id="sendInterval" value="10" type="number" min="1" max="60"/>
+    </div>
+    <button class="btn btn-start" id="btnStart" onclick="startSim()">▶ START</button>
+    <button class="btn btn-disabled" id="btnStop" onclick="stopSim()" disabled>■ STOP</button>
+  </div>
+
+  <div class="stats-row">
+    <div class="stat"><div class="stat-val" id="statTotal">0</div><div class="stat-label">Eventy wysłane</div></div>
+    <div class="stat"><div class="stat-val" id="statOk">0</div><div class="stat-label">OK</div></div>
+    <div class="stat"><div class="stat-val amber" id="statWarn">0</div><div class="stat-label">Warning</div></div>
+    <div class="stat"><div class="stat-val red" id="statFail">0</div><div class="stat-label">Awarie</div></div>
+    <div class="stat"><div class="stat-val purple" id="statSvc">0</div><div class="stat-label">Serwisy</div></div>
+  </div>
+
+  <div class="devices-grid" id="devicesGrid"></div>
+
+  <div class="log-section">
+    <div class="log-title">EVENT LOG</div>
+    <div class="log-box" id="logBox"></div>
+  </div>
+</div>
+
+<script>
+// ── AI4I 2020 physics ──────────────────────────────────────────────────────
+const R={
+  air_temp: {min:295.3,max:304.5,mean:300.0,std:2.0},
+  proc_temp:{min:305.7,max:313.8,mean:310.0,std:1.48},
+  rpm:      {min:1168, max:2886, mean:1538, std:179},
+  torque:   {min:3.8,  max:76.6, mean:40.0, std:9.97},
+  vibration:{min:0.01, max:2.0,  mean:0.04, std:0.02},
+};
+const BURN_THRESH=315.0, BURN_MAX=30;
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function gauss(m,s,a,b){return clamp(m+randn()*s,a,b)}
+
+// 5 simulated devices with Kraków area locations
+const DEVICES=[
+  {id:'SIM_01',lat:50.0521,lng:19.9345},
+  {id:'SIM_02',lat:50.0614,lng:19.9403},
+  {id:'SIM_03',lat:50.0432,lng:19.9521},
+  {id:'SIM_04',lat:50.0698,lng:19.9187},
+  {id:'SIM_05',lat:50.0355,lng:19.9612},
+];
+
+const ANOMALY_MODES=['HDF_DIRECT','PWF','CLOG','BEARING'];
+const MODE_WEIGHTS=[0.30,0.30,0.25,0.15];
+
+function pickMode(){
+  const r=Math.random();
+  let acc=0;
+  for(let i=0;i<ANOMALY_MODES.length;i++){acc+=MODE_WEIGHTS[i];if(r<acc)return ANOMALY_MODES[i];}
+  return 'HEAT';
+}
+
+function generateProfile(){
+  function rv(n,s){return clamp(n*(1+randn()*s),n*0.4,n*2.2);}
+  return{
+    heatRate:rv(0.07,0.30),heatDecay:rv(120,0.25),heatRpmDrop:rv(1.2,0.35),
+    clogTorque:rv(0.20,0.30),clogTemp:rv(0.04,0.30),clogRpm:rv(0.6,0.35),
+    bearingAmp:rv(0.007,0.35),bearingMax:rv(1.8,0.20),
+    driftAir:rv(0.020,0.30),driftProc:rv(0.022,0.30),
+    wearRate:rv(0.50,0.35),powerDrop:rv(7.0,0.30),powerDecay:rv(25,0.25),
+  };
+}
+
+function normalState(){
+  return{
+    air_temp: gauss(R.air_temp.mean, R.air_temp.std, R.air_temp.min, R.air_temp.max),
+    proc_temp:gauss(R.proc_temp.mean,R.proc_temp.std,R.proc_temp.min,R.proc_temp.max),
+    rpm:      gauss(R.rpm.mean,      R.rpm.std,      R.rpm.min,      R.rpm.max),
+    torque:   gauss(R.torque.mean,   R.torque.std,   R.torque.min,   R.torque.max),
+    vibration:gauss(R.vibration.mean,R.vibration.std,R.vibration.min,R.vibration.max),
+  };
+}
+
+function detectFailures(s){
+  const f=[], dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60);
+  if(dT<8.6&&s.rpm<1380)      f.push('HDF');
+  if(pw<3500||pw>9000)        f.push('PWF');
+  if(s.torque>60||dT>13.5)   f.push('CLOG');
+  if(s.vibration>0.8)         f.push('BEARING');
+  return f;
+}
+
+function mlScore(failures,s){
+  if(!failures.length){
+    const dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60);
+    const h=clamp(1-(dT-8.6)/6,0,1)*clamp(1-(s.rpm-1380)/500,0,1);
+    const p=pw<6500?clamp(1-(pw-3500)/3000,0,1):clamp((pw-6500)/2500,0,1);
+    const c=clamp((s.torque-40)/25,0,1);
+    const b=clamp((s.vibration-0.3)/0.5,0,1);
+    return clamp(Math.max(h,p,c,b)*0.38+0.02,0.02,0.39);
+  }
+  return clamp(0.42+(failures.length-1)*0.15+Math.random()*0.1,0.4,0.99);
+}
+
+function sev(sc){return sc<0.4?'OK':sc<0.7?'WARNING':'CRITICAL'}
+
+// ── Device state machine ───────────────────────────────────────────────────
+// phase: 'warmup' | 'anomaly' | 'failure' | 'service'
+function makeDevice(cfg){
+  const st=normalState();
+  return{
+    ...cfg,
+    state: st,
+    accum:{CLOG:0,BEARING:0,PWF:0,HDF:0},
+    profile: generateProfile(),
+    phase:'warmup',
+    mode:'NONE',
+    failureTimer:0,    // seconds in failure phase
+    warmupTimer:0,     // seconds in warmup
+    fails:[],
+    score:0.05,
+    sent:0,
+    buffer:[],
+  };
+}
+
+function tickDevice(dev, sendInterval){
+  const pr=dev.profile;
+  const TICK=sendInterval; // seconds per tick
+  const N=0.03;
+  const s=dev.state;
+  let nx={...s,
+    air_temp: clamp(s.air_temp +randn()*N*R.air_temp.std, R.air_temp.min, R.air_temp.max),
+    proc_temp:clamp(s.proc_temp+randn()*N*R.proc_temp.std,R.proc_temp.min,R.proc_temp.max),
+    torque:   clamp(s.torque   +randn()*N*R.torque.std,   R.torque.min,   R.torque.max),
+    vibration:clamp(s.vibration+randn()*N*0.01,           R.vibration.min,R.vibration.max),
+    rpm:      clamp(s.rpm+randn()*N*R.rpm.std,            R.rpm.min,      R.rpm.max),
+  };
+
+  const MR=0.025*TICK;
+  const m=dev.mode;
+  const ac=dev.accum;
+
+  if(m!=='HEAT'&&m!=='CLOG'&&m!=='DRIFT')
+    nx.proc_temp=clamp(nx.proc_temp+(R.proc_temp.mean-nx.proc_temp)*MR,R.proc_temp.min,R.proc_temp.max);
+  if(m!=='DRIFT')
+    nx.air_temp=clamp(nx.air_temp+(R.air_temp.mean-nx.air_temp)*MR,R.air_temp.min,R.air_temp.max);
+  if(m!=='CLOG'&&m!=='BEARING')
+    nx.torque=clamp(nx.torque+(R.torque.mean-nx.torque)*MR,R.torque.min,R.torque.max);
+  if(m!=='BEARING')
+    nx.vibration=clamp(nx.vibration+(0.03-nx.vibration)*0.08*TICK,R.vibration.min,0.07);
+
+  if(m==='HDF_DIRECT'){
+    ac.HDF=(ac.HDF||0)+1;
+    const drop=3.0*TICK+randn()*2;
+    nx.rpm=clamp(nx.rpm-drop,R.rpm.min,R.rpm.max);
+    const target=nx.air_temp+7.5;
+    nx.proc_temp=clamp(nx.proc_temp+(target-nx.proc_temp)*0.25,R.proc_temp.min,R.proc_temp.max);
+  }
+  if(m==='HEAT'){
+    ac.HEAT++;
+    const rate=pr.heatRate*Math.exp(ac.HEAT/(pr.heatDecay/TICK))*TICK;
+    nx.proc_temp=clamp(nx.proc_temp+rate,R.proc_temp.min,R.proc_temp.max);
+    nx.rpm=clamp(nx.rpm-pr.heatRpmDrop*TICK,R.rpm.min,R.rpm.max);
+  }
+  if(m==='CLOG'){
+    ac.CLOG++;
+    nx.torque=clamp(nx.torque+pr.clogTorque*TICK,R.torque.min,R.torque.max);
+    nx.proc_temp=clamp(nx.proc_temp+pr.clogTemp*TICK,R.proc_temp.min,R.proc_temp.max);
+    nx.rpm=clamp(nx.rpm-pr.clogRpm*TICK,R.rpm.min,R.rpm.max);
+  }
+  if(m==='BEARING'){
+    ac.BEARING++;
+    const amp=clamp(0.04+ac.BEARING*pr.bearingAmp,0.04,pr.bearingMax);
+    nx.vibration=clamp(amp*(0.7+0.3*Math.sin(ac.BEARING*0.9)),0.01,2.0);
+  }
+
+  if(m==='POWER'){
+    ac.POWER++;
+    const drop=pr.powerDrop*Math.exp(-ac.POWER/(pr.powerDecay/TICK))*TICK+0.8;
+    nx.rpm=clamp(nx.rpm-drop,R.rpm.min,R.rpm.max);
+    nx.torque=clamp(nx.torque+(Math.random()-0.5)*2.5,R.torque.min,R.torque.max);
+  }
+
+  dev.state=nx;
+  dev.fails=detectFailures(nx);
+  dev.score=mlScore(dev.fails,nx);
+}
+
+function updatePhase(dev, failureDuration, sendInterval){
+  const TICK=sendInterval;
+  switch(dev.phase){
+    case 'warmup':
+      dev.warmupTimer+=TICK;
+      if(dev.warmupTimer>=(20+Math.random()*40)){
+        dev.phase='anomaly';
+        dev.mode=pickMode();
+        dev.warmupTimer=0;
+        // For HDF_DIRECT: start with rpm near threshold
+        if(dev.mode==='HDF_DIRECT'){
+          dev.state.rpm=gauss(1500,60,1380,1620);
+          dev.state.proc_temp=gauss(308.5,0.5,307.0,309.5);
+        }
+      }
+      break;
+    case 'anomaly':
+      // Transition to failure when failures detected
+      if(dev.fails.length>0){
+        dev.phase='failure';
+        dev.failureTimer=0;
+      }
+      break;
+    case 'failure':
+      dev.failureTimer+=TICK;
+      if(dev.failureTimer>=failureDuration){
+        dev.phase='service';
+      }
+      break;
+    case 'service':
+      // Send service event then reset
+      dev.phase='warmup';
+      dev.mode='NONE';
+      dev.warmupTimer=0;
+      dev.state=normalState();
+      dev.accum={CLOG:0,BEARING:0,PWF:0,HDF:0};
+      dev.profile=generateProfile();
+      dev.fails=[];
+      dev.score=0.05;
+      return 'service'; // signal to send service event
+  }
+  return null;
+}
+
+// ── Simulator state ────────────────────────────────────────────────────────
+let devices=[];
+let simInterval=null;
+let stats={total:0,ok:0,warn:0,fail:0,svc:0};
+let logLines=[];
+
+function startSim(){
+  const url=document.getElementById('serverUrl').value.trim();
+  const fd=parseInt(document.getElementById('failureDuration').value)||30;
+  const si=parseInt(document.getElementById('sendInterval').value)||10;
+
+  devices=DEVICES.map(makeDevice);
+  stats={total:0,ok:0,warn:0,fail:0,svc:0};
+  logLines=[];
+
+  renderDevices();
+  renderStats();
+  renderLog();
+
+  document.getElementById('btnStart').className='btn btn-disabled';
+  document.getElementById('btnStart').disabled=true;
+  document.getElementById('btnStop').className='btn btn-stop';
+  document.getElementById('btnStop').disabled=false;
+
+  simInterval=setInterval(()=>simTick(url,fd,si), si*1000);
+  addLog(`Symulator uruchomiony | ${devices.length} urządzeń | awaria=${fd}s | interval=${si}s`,'ok');
+}
+
+function stopSim(){
+  if(simInterval){clearInterval(simInterval);simInterval=null;}
+  document.getElementById('btnStart').className='btn btn-start';
+  document.getElementById('btnStart').disabled=false;
+  document.getElementById('btnStop').className='btn btn-disabled';
+  document.getElementById('btnStop').disabled=true;
+  addLog('Symulator zatrzymany','warn');
+}
+
+async function simTick(url, failureDuration, sendInterval){
+  for(const dev of devices){
+    tickDevice(dev, sendInterval);
+    const signal=updatePhase(dev, failureDuration, sendInterval);
+
+    if(signal==='service'){
+      // Send service event
+      const sp={
+        device_id:dev.id,
+        lat:dev.lat,lng:dev.lng,
+        air_temp:+dev.state.air_temp.toFixed(2),
+        proc_temp:+dev.state.proc_temp.toFixed(2),
+        rpm:Math.round(dev.state.rpm),
+        torque:+dev.state.torque.toFixed(2),
+        vibration:+dev.state.vibration.toFixed(3),
+        ml_score:0,failure_type:'None',severity:'OK',
+        event_type:'service',
+        resolved_failure:dev.fails.length?dev.fails.join(','):'RESET',
+        ts:new Date().toISOString(),
+      };
+      await sendEvent(url,sp);
+      stats.svc++;
+      addLog(`[${dev.id}] SERVICE → ${sp.resolved_failure}`,'svc');
+    } else {
+      // Send telemetry
+      const f=dev.fails;
+      const sc=dev.score;
+      const payload={
+        device_id:dev.id,
+        lat:dev.lat,lng:dev.lng,
+        air_temp:+dev.state.air_temp.toFixed(2),
+        proc_temp:+dev.state.proc_temp.toFixed(2),
+        rpm:Math.round(dev.state.rpm),
+        torque:+dev.state.torque.toFixed(2),
+        vibration:+dev.state.vibration.toFixed(3),
+        ml_score:+sc.toFixed(3),
+        failure_type:f.length?f.join(','):'None',
+        severity:sev(sc),
+        event_type:'telemetry',
+        ts:new Date().toISOString(),
+      };
+      await sendEvent(url,payload);
+      stats.total++;
+      if(f.length){stats.fail++;addLog(`[${dev.id}] FAILURE: ${f.join('+')} | mode=${dev.mode} | timer=${dev.failureTimer}s`,'fail');}
+      else if(sc>0.4){stats.warn++;addLog(`[${dev.id}] WARNING score=${sc.toFixed(2)} | mode=${dev.mode}`,'warn');}
+      else{stats.ok++;}
+    }
+    dev.sent++;
+  }
+  renderDevices();
+  renderStats();
+}
+
+async function sendEvent(url, payload){
+  try{
+    await fetch(`${url}/event`,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify(payload),signal:AbortSignal.timeout(5000)
+    });
+  }catch(e){addLog(`ERR send: ${e.message}`,'fail');}
+}
+
+// ── UI rendering ───────────────────────────────────────────────────────────
+function renderDevices(){
+  const grid=document.getElementById('devicesGrid');
+  grid.innerHTML=devices.map(dev=>{
+    const isFailure=dev.phase==='failure';
+    const isService=dev.phase==='service';
+    const statusText=isService?'⟳ SERVICE':isFailure?`⚠ ${dev.fails.join('+')}`:dev.phase==='anomaly'?`▲ ${dev.mode}`:'● OK';
+    const statusClass=isService?'service':isFailure?'failure':dev.score>0.4?'warning':'ok';
+    return `<div class="device-card ${isFailure?'failure':isService?'service':''}">
+      <div class="device-id">${dev.id} · ${dev.type}</div>
+      <div class="device-status ${statusClass}">${statusText}</div>
+      <div class="device-metric">T: ${(dev.state.proc_temp-273.15).toFixed(1)}°C RPM: ${Math.round(dev.state.rpm)}</div>
+      <div class="device-metric">Sent: ${dev.sent} events</div>
+      ${isFailure?`<div class="device-timer">Timer: ${dev.failureTimer}s / ${document.getElementById('failureDuration').value}s</div>`:''}
+    </div>`;
+  }).join('');
+}
+
+function renderStats(){
+  document.getElementById('statTotal').textContent=stats.total;
+  document.getElementById('statOk').textContent=stats.ok;
+  document.getElementById('statWarn').textContent=stats.warn;
+  document.getElementById('statFail').textContent=stats.fail;
+  document.getElementById('statSvc').textContent=stats.svc;
+}
+
+function addLog(msg,cls='ok'){
+  const ts=new Date().toLocaleTimeString('pl-PL');
+  logLines.unshift({ts,msg,cls});
+  if(logLines.length>100) logLines.pop();
+  renderLog();
+}
+
+function renderLog(){
+  const box=document.getElementById('logBox');
+  box.innerHTML=logLines.map(l=>`<div class="log-line ${l.cls}">[${l.ts}] ${l.msg}</div>`).join('');
+}
+</script>
+</body>
+</html>
