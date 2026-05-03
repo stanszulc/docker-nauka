@@ -428,20 +428,43 @@ def main():
 
             try:
                 if topic == TOPIC_TELEMETRY:
-                    # Run ML inference
-                    ml_score, failure_type, rul_seconds = infer(model, event)
-                    severity = score_to_severity(ml_score)
+                    event_type = event.get("event_type", "telemetry")
 
-                    write_event(conn, event, ml_score, failure_type, severity, rul_seconds)
+                    if event_type == "service":
+                        # SERVICE event — reset device status to None failure
+                        with conn.cursor() as cur:
+                            cur.execute("""
+                                INSERT INTO hvac_device_status
+                                  (device_id, lat, lng, last_seen, last_severity, last_failure_type)
+                                VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), 'OK', 'None')
+                                ON CONFLICT (device_id) DO UPDATE SET
+                                  last_seen         = NOW(),
+                                  last_severity     = 'OK',
+                                  last_failure_type = 'None',
+                                  online            = TRUE
+                            """, {
+                                "device_id": event.get("device_id"),
+                                "lat":       event.get("lat"),
+                                "lng":       event.get("lng"),
+                            })
+                        conn.commit()
+                        log.info("SERVICE | device=%s resolved=%s",
+                                 event.get('device_id'), event.get('resolved_failure'))
+                    else:
+                        # Run ML inference
+                        ml_score, failure_type, rul_seconds = infer(model, event)
+                        severity = score_to_severity(ml_score)
 
-                    if rul_seconds is not None and rul_seconds < 300:
-                        log.warning("RUL alert | device=%s rul=%.0fs (%.1f min) failure=%s",
-                                    event.get('device_id'), rul_seconds, rul_seconds/60, failure_type)
+                        write_event(conn, event, ml_score, failure_type, severity, rul_seconds)
 
-                    msg_count += 1
-                    if msg_count % 100 == 0:
-                        log.info("Processed %d events | last: %s score=%.3f sev=%s",
-                                 msg_count, event.get("device_id"), ml_score, severity)
+                        if rul_seconds is not None and rul_seconds < 300:
+                            log.warning("RUL alert | device=%s rul=%.0fs (%.1f min) failure=%s",
+                                        event.get('device_id'), rul_seconds, rul_seconds/60, failure_type)
+
+                        msg_count += 1
+                        if msg_count % 100 == 0:
+                            log.info("Processed %d events | last: %s score=%.3f sev=%s",
+                                     msg_count, event.get("device_id"), ml_score, severity)
 
                 elif topic == TOPIC_STATUS:
                     # Update device online status
