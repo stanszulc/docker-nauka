@@ -1,7 +1,14 @@
 """
-hvac_consumer — ML Consumer
-Reads from Kafka hvac_telemetry, runs Random Forest inference,
-writes enriched records to PostgreSQL. Handles its own DB schema creation.
+hvac_consumer v2 — ML Consumer
+Reads from Kafka hvac_telemetry, runs XGBoost classifier inference,
+writes enriched records to PostgreSQL.
+
+Changes vs v1:
+- Removed tool_wear, product_type (CNC-specific)
+- New failure types: HDF, PWF, CLOG, BEARING
+- Classifier model (is_pre_failure 0/1) instead of RUL regressor
+- uptime_seconds — continuous counter per device (resets on SERVICE)
+- session_id support
 """
 
 import os
@@ -15,8 +22,7 @@ from datetime import datetime, timezone
 import joblib
 import numpy as np
 import psycopg2
-import psycopg2.extras
-from confluent_kafka import Consumer, KafkaError, TopicPartition
+from confluent_kafka import Consumer, KafkaError
 from confluent_kafka.admin import AdminClient, NewTopic
 
 # ── Config ────────────────────────────────────────────────────────────────────
@@ -38,41 +44,34 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── Feature order must match training data ────────────────────────────────────
-# AI4I 2020: air_temp[K], proc_temp[K], rpm, torque[Nm], tool_wear[min]
-FEATURE_COLS = ["air_temp", "proc_temp", "rpm", "torque", "tool_wear"]
-
-# Failure type label mapping (matches AI4I 2020 target encoding)
-FAILURE_LABELS = {0: "None", 1: "HDF", 2: "OSF", 3: "PWF", 4: "TWF", 5: "Random"}
-
-
 # ── Database schema ───────────────────────────────────────────────────────────
 SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS hvac_metrics (
-    id           BIGSERIAL    PRIMARY KEY,
-    device_id    VARCHAR(50)  NOT NULL,
-    ts           TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
-    server_ts    TIMESTAMPTZ,
-    lat          DOUBLE PRECISION,
-    lng          DOUBLE PRECISION,
-    product_type CHAR(1),
-    air_temp     REAL,
-    proc_temp    REAL,
-    rpm          INTEGER,
-    torque       REAL,
-    tool_wear    INTEGER,
-    vibration    REAL,
-    ml_score     REAL,
-    failure_type VARCHAR(30),
-    severity     VARCHAR(10),
-    app_severity VARCHAR(10),
-    rul_seconds  REAL,
-    rul_minutes  REAL
+    id               BIGSERIAL    PRIMARY KEY,
+    device_id        VARCHAR(50)  NOT NULL,
+    ts               TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+    server_ts        TIMESTAMPTZ,
+    lat              DOUBLE PRECISION,
+    lng              DOUBLE PRECISION,
+    air_temp         REAL,
+    proc_temp        REAL,
+    rpm              INTEGER,
+    torque           REAL,
+    vibration        REAL,
+    ml_score         REAL,
+    failure_type     VARCHAR(50),
+    severity         VARCHAR(10),
+    app_severity     VARCHAR(10),
+    is_pre_failure   SMALLINT     DEFAULT 0,
+    fail_probability REAL,
+    uptime_seconds   REAL,
+    session_id       VARCHAR(36)
 );
 
--- Add RUL columns if upgrading existing table
-ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS rul_seconds REAL;
-ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS rul_minutes REAL;
+ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS is_pre_failure   SMALLINT DEFAULT 0;
+ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS fail_probability REAL;
+ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS uptime_seconds   REAL;
+ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS session_id       VARCHAR(36);
 
 CREATE TABLE IF NOT EXISTS hvac_alerts_log (
     id               BIGSERIAL    PRIMARY KEY,
@@ -81,15 +80,12 @@ CREATE TABLE IF NOT EXISTS hvac_alerts_log (
     lat              DOUBLE PRECISION,
     lng              DOUBLE PRECISION,
     ml_score         REAL,
-    failure_type     VARCHAR(30),
+    failure_type     VARCHAR(50),
     severity         VARCHAR(10),
     event_type       VARCHAR(20)  DEFAULT 'telemetry',
-    resolved_failure VARCHAR(30),
+    resolved_failure VARCHAR(50),
     raw_event        JSONB
 );
-
-CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type
-    ON hvac_alerts_log (event_type, ts DESC);
 
 CREATE TABLE IF NOT EXISTS hvac_device_status (
     device_id         VARCHAR(50)  PRIMARY KEY,
@@ -98,78 +94,48 @@ CREATE TABLE IF NOT EXISTS hvac_device_status (
     online            BOOLEAN      DEFAULT TRUE,
     last_seen         TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
     last_severity     VARCHAR(10)  DEFAULT 'OK',
-    last_failure_type VARCHAR(30)  DEFAULT 'None'
+    last_failure_type VARCHAR(50)  DEFAULT 'None',
+    uptime_seconds    REAL         DEFAULT 0
 );
 
-CREATE INDEX IF NOT EXISTS idx_hvac_metrics_device_ts
-    ON hvac_metrics (device_id, ts DESC);
+ALTER TABLE hvac_device_status ADD COLUMN IF NOT EXISTS uptime_seconds REAL DEFAULT 0;
 
-CREATE INDEX IF NOT EXISTS idx_hvac_alerts_ts
-    ON hvac_alerts_log (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_hvac_metrics_device_ts ON hvac_metrics (device_id, ts DESC);
+CREATE INDEX IF NOT EXISTS idx_hvac_metrics_ts        ON hvac_metrics (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_hvac_alerts_ts         ON hvac_alerts_log (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type ON hvac_alerts_log (event_type, ts DESC);
 """
 
-RETENTION_SQL = """
-DELETE FROM hvac_metrics
-WHERE ts < NOW() - INTERVAL '{hours} hours';
-"""
+RETENTION_SQL = "DELETE FROM hvac_metrics WHERE ts < NOW() - INTERVAL '{hours} hours';"
 
-
-# ── PostgreSQL connection with retry ─────────────────────────────────────────
-def connect_postgres(retries: int = 10) -> psycopg2.extensions.connection:
-    for attempt in range(retries):
-        try:
-            conn = psycopg2.connect(POSTGRES_DSN)
-            conn.autocommit = False
-            log.info("PostgreSQL connected")
-            return conn
-        except Exception as e:
-            log.warning("Postgres not ready (attempt %d/%d): %s", attempt + 1, retries, e)
-            time.sleep(3)
-    log.error("Cannot connect to PostgreSQL after %d attempts", retries)
-    sys.exit(1)
-
-
-def ensure_schema(conn):
-    with conn.cursor() as cur:
-        cur.execute(SCHEMA_SQL)
-    conn.commit()
-    log.info("Schema ready (hvac_metrics, hvac_alerts_log, hvac_device_status)")
-
-
-def run_retention(conn):
-    """Delete old raw telemetry — keeps DB lean."""
-    with conn.cursor() as cur:
-        cur.execute(RETENTION_SQL.format(hours=RETENTION_HOURS))
-        deleted = cur.rowcount
-    conn.commit()
-    if deleted:
-        log.info("Retention cleanup: deleted %d old rows from hvac_metrics", deleted)
-
-
-# ── ML Model (XGBoost RUL) ────────────────────────────────────────────────────
-# Per-device rolling buffer for feature engineering (window=3 ticks)
+# ── ML Model ──────────────────────────────────────────────────────────────────
 DEVICE_BUFFERS: dict = {}
 WINDOW = 20
-OSF_LIMITS = {'L': 13000, 'M': 12000, 'H': 11000}
+DEVICE_UPTIME: dict = {}
+
+BASE_FEATURES = [
+    'air_temp', 'proc_temp', 'rpm', 'torque',
+    'vibration', 'delta_temp', 'power_w',
+    'proc_temp_velocity', 'rpm_velocity',
+    'torque_velocity', 'vibration_velocity',
+]
+
 
 def load_model(path: str):
-    """Load XGBoost RUL model bundle. Returns None if not present."""
     if not os.path.exists(path):
         log.warning("Model not found at %s — using heuristic ml_score", path)
         return None
     bundle = joblib.load(path)
-    log.info("RUL model loaded: %s | features=%d", path, len(bundle.get('feature_cols', [])))
+    log.info("Model loaded: %s | type=%s features=%d",
+             path, bundle.get('model_type', 'unknown'), len(bundle.get('feature_cols', [])))
     return bundle
 
 
-def _engineer_row(buf: list, product_type: str) -> dict:
-    """Build feature vector from rolling buffer. Mirrors train_rul.py logic."""
+def _engineer_row(buf: list, uptime_seconds: float = 0.0) -> dict:
     n = len(buf)
-    BASE = ['air_temp', 'proc_temp', 'rpm', 'torque', 'tool_wear', 'vibration', 'delta_temp', 'power_w']
-    pt_enc = {'L': 0, 'M': 1, 'H': 2}.get(product_type, 0)
-    feats = {'product_type_enc': pt_enc, 'step_norm': 0.5}
+    feats = {'uptime_norm': uptime_seconds / 1800.0}
 
-    for feat in BASE:
+    for feat in BASE_FEATURES:
         vals = [r.get(feat, 0.0) for r in buf]
         feats[f'{feat}_rmean'] = float(np.mean(vals))
         feats[f'{feat}_rgrad'] = float(np.mean(np.diff(vals))) if n > 1 else 0.0
@@ -181,39 +147,38 @@ def _engineer_row(buf: list, product_type: str) -> dict:
     feats['torque_rate']    = feats['torque_rgrad']
     feats['vibration_rate'] = feats['vibration_rgrad']
     feats['hdf_margin']     = last.get('delta_temp', 10.0) - 8.6
-    feats['pwf_margin']     = min(last.get('power_w', 6500) - 3500, 9000 - last.get('power_w', 6500))
-    osf_limit               = OSF_LIMITS.get(product_type, 13000)
-    feats['osf_margin']     = osf_limit - last.get('tool_wear', 0) * last.get('torque', 40)
-    feats['twf_margin']     = 200 - last.get('tool_wear', 0)
+    feats['pwf_margin']     = min(last.get('power_w', 6500) - 3500,
+                                  9000 - last.get('power_w', 6500))
     return feats
 
 
-def infer(bundle, event: dict) -> tuple:
-    """
-    Run XGBoost RUL inference.
-    Returns (ml_score, failure_type, rul_seconds).
-    """
+def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
+    """Returns (ml_score, failure_type, is_pre_failure, fail_probability)."""
     failure_type = event.get("failure_type", "None")
     app_score    = event.get("ml_score", 0.0)
 
     if bundle is None:
-        return app_score, failure_type, None
+        return app_score, failure_type, 0, app_score
 
     try:
-        device_id    = event["device_id"]
-        product_type = event.get("type", "L")
+        device_id = event["device_id"]
         dT    = event.get("proc_temp", 310) - event.get("air_temp", 300)
         power = event.get("torque", 40) * (event.get("rpm", 1538) * 2 * np.pi / 60)
 
+        prev = DEVICE_BUFFERS.get(device_id, [{}])[-1] if DEVICE_BUFFERS.get(device_id) else {}
+
         sensor_row = {
-            "air_temp":   event.get("air_temp",  300.0),
-            "proc_temp":  event.get("proc_temp", 310.0),
-            "rpm":        event.get("rpm",        1538),
-            "torque":     event.get("torque",      40.0),
-            "tool_wear":  event.get("tool_wear",   108),
-            "vibration":  event.get("vibration",  0.03),
-            "delta_temp": dT,
-            "power_w":    power,
+            "air_temp":           event.get("air_temp",   300.0),
+            "proc_temp":          event.get("proc_temp",  310.0),
+            "rpm":                event.get("rpm",         1538),
+            "torque":             event.get("torque",       40.0),
+            "vibration":          event.get("vibration",   0.03),
+            "delta_temp":         dT,
+            "power_w":            power,
+            "proc_temp_velocity": event.get("proc_temp", 310.0) - prev.get("proc_temp", 310.0),
+            "rpm_velocity":       event.get("rpm",  1538) - prev.get("rpm",  1538),
+            "torque_velocity":    event.get("torque", 40.0) - prev.get("torque", 40.0),
+            "vibration_velocity": event.get("vibration", 0.03) - prev.get("vibration", 0.03),
         }
 
         if device_id not in DEVICE_BUFFERS:
@@ -223,40 +188,49 @@ def infer(bundle, event: dict) -> tuple:
         if len(buf) > WINDOW:
             buf.pop(0)
 
-        feats     = _engineer_row(buf, product_type)
+        feats     = _engineer_row(buf, uptime_seconds)
         feat_cols = bundle['feature_cols']
         X         = np.array([[feats.get(c, 0.0) for c in feat_cols]])
 
-        rul_seconds = float(max(0.0, bundle['model'].predict(X)[0]))
-        ml_score    = float(np.clip(1.0 - rul_seconds / 1800, 0.05, 0.95))
+        model_type = bundle.get('model_type', 'regressor')
 
-        return round(ml_score, 4), failure_type, round(rul_seconds, 1)
+        if model_type == 'classifier':
+            proba          = bundle['model'].predict_proba(X)[0]
+            fail_prob      = float(proba[1])
+            threshold      = bundle.get('threshold', 0.5)
+            is_pre_failure = 1 if fail_prob >= threshold else 0
+            ml_score       = fail_prob
+        else:
+            rul_seconds    = float(max(0.0, bundle['model'].predict(X)[0]))
+            ml_score       = float(np.clip(1.0 - rul_seconds / 1800, 0.05, 0.95))
+            is_pre_failure = 1 if ml_score > 0.6 else 0
+            fail_prob      = ml_score
+
+        return round(ml_score, 4), failure_type, is_pre_failure, round(fail_prob, 4)
 
     except Exception as e:
-        log.error("RUL inference error: %s", e)
-        return app_score, failure_type, None
+        log.error("Inference error: %s", e)
+        return app_score, failure_type, 0, app_score
 
 
 def score_to_severity(score: float) -> str:
-    if score >= 0.7:
-        return "CRITICAL"
-    if score >= 0.4:
-        return "WARNING"
+    if score >= 0.7:  return "CRITICAL"
+    if score >= 0.4:  return "WARNING"
     return "OK"
 
 
-# ── Database writes ───────────────────────────────────────────────────────────
+# ── SQL statements ────────────────────────────────────────────────────────────
 INSERT_METRIC = """
 INSERT INTO hvac_metrics
-  (device_id, ts, server_ts, lat, lng, product_type,
-   air_temp, proc_temp, rpm, torque, tool_wear, vibration,
+  (device_id, ts, server_ts, lat, lng,
+   air_temp, proc_temp, rpm, torque, vibration,
    ml_score, failure_type, severity, app_severity,
-   rul_seconds, rul_minutes)
+   is_pre_failure, fail_probability, uptime_seconds, session_id)
 VALUES
-  (%(device_id)s, %(ts)s, %(server_ts)s, %(lat)s, %(lng)s, %(product_type)s,
-   %(air_temp)s, %(proc_temp)s, %(rpm)s, %(torque)s, %(tool_wear)s, %(vibration)s,
+  (%(device_id)s, %(ts)s, %(server_ts)s, %(lat)s, %(lng)s,
+   %(air_temp)s, %(proc_temp)s, %(rpm)s, %(torque)s, %(vibration)s,
    %(ml_score)s, %(failure_type)s, %(severity)s, %(app_severity)s,
-   %(rul_seconds)s, %(rul_minutes)s)
+   %(is_pre_failure)s, %(fail_probability)s, %(uptime_seconds)s, %(session_id)s)
 """
 
 INSERT_ALERT = """
@@ -270,80 +244,93 @@ VALUES
 """
 
 UPSERT_STATUS = """
-INSERT INTO hvac_device_status (device_id, lat, lng, last_seen, last_severity, last_failure_type)
-VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), %(severity)s, %(failure_type)s)
+INSERT INTO hvac_device_status
+  (device_id, lat, lng, last_seen, last_severity, last_failure_type, uptime_seconds)
+VALUES
+  (%(device_id)s, %(lat)s, %(lng)s, NOW(), %(severity)s, %(failure_type)s, %(uptime)s)
 ON CONFLICT (device_id) DO UPDATE SET
   lat               = EXCLUDED.lat,
   lng               = EXCLUDED.lng,
   last_seen         = NOW(),
   last_severity     = EXCLUDED.last_severity,
   last_failure_type = EXCLUDED.last_failure_type,
+  uptime_seconds    = EXCLUDED.uptime_seconds,
   online            = TRUE
 """
 
 
-def write_event(conn, event: dict, ml_score: float, failure_type: str, severity: str, rul_seconds=None):
-    row = {
-        "device_id":    event["device_id"],
-        "ts":           event.get("ts", datetime.now(timezone.utc).isoformat()),
-        "server_ts":    datetime.fromtimestamp(event["server_ts"], tz=timezone.utc)
-                        if "server_ts" in event else None,
-        "lat":          event.get("lat"),
-        "lng":          event.get("lng"),
-        "product_type": event.get("type"),
-        "air_temp":     event.get("air_temp"),
-        "proc_temp":    event.get("proc_temp"),
-        "rpm":          event.get("rpm"),
-        "torque":       event.get("torque"),
-        "tool_wear":    event.get("tool_wear"),
-        "vibration":    event.get("vibration"),
-        "ml_score":     ml_score,
-        "failure_type": failure_type,
-        "severity":     severity,
-        "app_severity": event.get("severity", "OK"),
-        "rul_seconds":  rul_seconds,
-        "rul_minutes":  round(rul_seconds / 60, 2) if rul_seconds is not None else None,
-    }
+def connect_postgres(retries: int = 10):
+    for attempt in range(retries):
+        try:
+            conn = psycopg2.connect(POSTGRES_DSN)
+            conn.autocommit = False
+            log.info("PostgreSQL connected")
+            return conn
+        except Exception as e:
+            log.warning("Postgres not ready (%d/%d): %s", attempt + 1, retries, e)
+            time.sleep(3)
+    sys.exit(1)
+
+
+def ensure_schema(conn):
     with conn.cursor() as cur:
-        cur.execute(INSERT_METRIC, row)
-        # Update device status table (used by Grafana Geomap)
-        cur.execute(UPSERT_STATUS, {
-            "device_id":    event["device_id"],
-            "lat":          event.get("lat"),
-            "lng":          event.get("lng"),
-            "severity":     severity,
-            "failure_type": failure_type if failure_type != "None" else "None",
-        })
-        # Write to alerts log if score exceeds threshold
-        event_type = event.get("event_type", "telemetry")
-        # Always log service events; log telemetry only when above threshold
-        if ml_score >= ALERT_THRESHOLD or event_type == "service":
-            cur.execute(INSERT_ALERT, {
-                "device_id":       event["device_id"],
-                "ts":              row["ts"],
-                "lat":             event.get("lat"),
-                "lng":             event.get("lng"),
-                "ml_score":        ml_score,
-                "failure_type":    failure_type,
-                "severity":        severity,
-                "event_type":      event_type,
-                "resolved_failure": event.get("resolved_failure"),
-                "raw_event":       json.dumps(event),
-            })
+        cur.execute(SCHEMA_SQL)
+    conn.commit()
+    log.info("Schema ready")
+
+
+def run_retention(conn):
+    with conn.cursor() as cur:
+        cur.execute(RETENTION_SQL.format(hours=RETENTION_HOURS))
     conn.commit()
 
 
-# ── Kafka Consumer setup ──────────────────────────────────────────────────────
+def restore_uptime(conn):
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                SELECT DISTINCT ON (device_id) device_id, uptime_seconds, ts
+                FROM hvac_metrics WHERE uptime_seconds IS NOT NULL
+                ORDER BY device_id, ts DESC
+            """)
+            for row in cur.fetchall():
+                dev_id, last_uptime, last_ts = row
+                if last_uptime is not None:
+                    DEVICE_UPTIME[dev_id] = {
+                        'uptime': float(last_uptime),
+                        'last_ts': last_ts.timestamp()
+                    }
+                    log.info("Restored uptime | device=%s uptime=%.0fs", dev_id, last_uptime)
+    except Exception as e:
+        log.warning("Could not restore uptime: %s", e)
+
+
+def get_uptime(device_id: str) -> float:
+    now_ts = time.time()
+    if device_id not in DEVICE_UPTIME:
+        DEVICE_UPTIME[device_id] = {'uptime': 0.0, 'last_ts': now_ts}
+    tracker = DEVICE_UPTIME[device_id]
+    delta = max(0.0, now_ts - tracker['last_ts'])
+    tracker['uptime'] += delta
+    tracker['last_ts'] = now_ts
+    return tracker['uptime']
+
+
+def reset_uptime(device_id: str):
+    DEVICE_UPTIME[device_id] = {'uptime': 0.0, 'last_ts': time.time()}
+    if device_id in DEVICE_BUFFERS:
+        DEVICE_BUFFERS[device_id] = []
+
+
 def create_consumer() -> Consumer:
     return Consumer({
-        "bootstrap.servers":        KAFKA_BOOTSTRAP,
-        "group.id":                 CONSUMER_GROUP,
-        "auto.offset.reset":        "latest",   # don't replay history on restart
-        "enable.auto.commit":       False,       # manual commit after DB write
-        "session.timeout.ms":       30000,
-        "heartbeat.interval.ms":    10000,
-        "max.poll.interval.ms":     300000,
-        "socket.timeout.ms":        10000,
+        "bootstrap.servers":     KAFKA_BOOTSTRAP,
+        "group.id":              CONSUMER_GROUP,
+        "auto.offset.reset":     "latest",
+        "enable.auto.commit":    False,
+        "session.timeout.ms":    30000,
+        "heartbeat.interval.ms": 10000,
+        "max.poll.interval.ms":  300000,
     })
 
 
@@ -355,23 +342,20 @@ def ensure_topics():
         NewTopic(TOPIC_ALERTS,    num_partitions=1, replication_factor=1,
                  config={"retention.ms": "604800000", "retention.bytes": "10485760"}),
         NewTopic(TOPIC_STATUS,    num_partitions=1, replication_factor=1,
-                 config={"retention.ms": "3600000",  "retention.bytes": "10485760"}),
+                 config={"retention.ms": "3600000", "retention.bytes": "10485760"}),
     ]
     futures = admin.create_topics(topics)
     for topic, future in futures.items():
         try:
             future.result()
-            log.info("Topic created: %s", topic)
         except Exception as e:
             if "TopicExistsException" not in str(type(e)):
                 log.warning("Topic %s: %s", topic, e)
 
 
-# ── Main loop ─────────────────────────────────────────────────────────────────
 def main():
-    log.info("hvac_consumer starting | kafka=%s model=%s", KAFKA_BOOTSTRAP, MODEL_PATH)
+    log.info("hvac_consumer v2 | kafka=%s model=%s", KAFKA_BOOTSTRAP, MODEL_PATH)
 
-    # Graceful shutdown
     running = True
     def handle_signal(sig, frame):
         nonlocal running
@@ -380,42 +364,35 @@ def main():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT,  handle_signal)
 
-    # Connect Postgres
-    conn = connect_postgres()
+    conn  = connect_postgres()
     ensure_schema(conn)
-
-    # Load model (may be None if .pkl not present yet)
     model = load_model(MODEL_PATH)
 
-    # Ensure Kafka topics exist
     for attempt in range(10):
         try:
             ensure_topics()
             break
         except Exception as e:
-            log.warning("Kafka not ready (attempt %d): %s", attempt + 1, e)
+            log.warning("Kafka not ready (%d): %s", attempt + 1, e)
             time.sleep(3)
 
-    # Start consumer
     consumer = create_consumer()
     consumer.subscribe([TOPIC_TELEMETRY, TOPIC_STATUS])
     log.info("Subscribed to topics: %s, %s", TOPIC_TELEMETRY, TOPIC_STATUS)
 
-    # Retention runs every hour
+    restore_uptime(conn)
+
     last_retention = time.time()
     msg_count = 0
 
     try:
         while running:
             msg = consumer.poll(timeout=1.0)
-
             if msg is None:
                 continue
-
             if msg.error():
-                if msg.error().code() == KafkaError._PARTITION_EOF:
-                    continue
-                log.error("Consumer error: %s", msg.error())
+                if msg.error().code() != KafkaError._PARTITION_EOF:
+                    log.error("Consumer error: %s", msg.error())
                 continue
 
             topic = msg.topic()
@@ -429,74 +406,118 @@ def main():
             try:
                 if topic == TOPIC_TELEMETRY:
                     event_type = event.get("event_type", "telemetry")
+                    device_id  = event.get("device_id", "unknown")
 
                     if event_type == "service":
-                        # SERVICE event — reset device status to None failure
+                        reset_uptime(device_id)
                         with conn.cursor() as cur:
                             cur.execute("""
                                 INSERT INTO hvac_device_status
-                                  (device_id, lat, lng, last_seen, last_severity, last_failure_type)
-                                VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), 'OK', 'None')
+                                  (device_id, lat, lng, last_seen, last_severity,
+                                   last_failure_type, uptime_seconds)
+                                VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), 'OK', 'None', 0)
                                 ON CONFLICT (device_id) DO UPDATE SET
-                                  last_seen         = NOW(),
-                                  last_severity     = 'OK',
-                                  last_failure_type = 'None',
-                                  online            = TRUE
-                            """, {
-                                "device_id": event.get("device_id"),
-                                "lat":       event.get("lat"),
-                                "lng":       event.get("lng"),
-                            })
+                                  last_seen='NOW()', last_severity='OK',
+                                  last_failure_type='None', uptime_seconds=0, online=TRUE
+                            """, {"device_id": device_id,
+                                  "lat": event.get("lat"),
+                                  "lng": event.get("lng")})
                         conn.commit()
                         log.info("SERVICE | device=%s resolved=%s",
-                                 event.get('device_id'), event.get('resolved_failure'))
+                                 device_id, event.get('resolved_failure'))
+
                     else:
-                        # Run ML inference
-                        ml_score, failure_type, rul_seconds = infer(model, event)
+                        uptime = get_uptime(device_id)
+                        ml_score, failure_type, is_pre_failure, fail_prob = infer(model, event, uptime)
                         severity = score_to_severity(ml_score)
 
-                        write_event(conn, event, ml_score, failure_type, severity, rul_seconds)
+                        row = {
+                            "device_id":       device_id,
+                            "ts":              event.get("ts", datetime.now(timezone.utc).isoformat()),
+                            "server_ts":       datetime.fromtimestamp(event["server_ts"], tz=timezone.utc)
+                                               if "server_ts" in event else None,
+                            "lat":             event.get("lat"),
+                            "lng":             event.get("lng"),
+                            "air_temp":        event.get("air_temp"),
+                            "proc_temp":       event.get("proc_temp"),
+                            "rpm":             event.get("rpm"),
+                            "torque":          event.get("torque"),
+                            "vibration":       event.get("vibration"),
+                            "ml_score":        ml_score,
+                            "failure_type":    failure_type,
+                            "severity":        severity,
+                            "app_severity":    event.get("severity", "OK"),
+                            "is_pre_failure":  is_pre_failure,
+                            "fail_probability": fail_prob,
+                            "uptime_seconds":  round(uptime, 1),
+                            "session_id":      event.get("session_id"),
+                        }
 
-                        if rul_seconds is not None and rul_seconds < 300:
-                            log.warning("RUL alert | device=%s rul=%.0fs (%.1f min) failure=%s",
-                                        event.get('device_id'), rul_seconds, rul_seconds/60, failure_type)
+                        with conn.cursor() as cur:
+                            cur.execute(INSERT_METRIC, row)
+                            cur.execute(UPSERT_STATUS, {
+                                "device_id":    device_id,
+                                "lat":          event.get("lat"),
+                                "lng":          event.get("lng"),
+                                "severity":     severity,
+                                "failure_type": failure_type,
+                                "uptime":       round(uptime, 1),
+                            })
+                            if ml_score >= ALERT_THRESHOLD or is_pre_failure:
+                                cur.execute(INSERT_ALERT, {
+                                    "device_id":        device_id,
+                                    "ts":               row["ts"],
+                                    "lat":              event.get("lat"),
+                                    "lng":              event.get("lng"),
+                                    "ml_score":         ml_score,
+                                    "failure_type":     failure_type,
+                                    "severity":         severity,
+                                    "event_type":       event_type,
+                                    "resolved_failure": event.get("resolved_failure"),
+                                    "raw_event":        json.dumps(event),
+                                })
+                        conn.commit()
+
+                        if is_pre_failure:
+                            log.warning("PRE-FAILURE | device=%s prob=%.2f failure=%s uptime=%.0fs",
+                                        device_id, fail_prob, failure_type, uptime)
 
                         msg_count += 1
                         if msg_count % 100 == 0:
-                            log.info("Processed %d events | last: %s score=%.3f sev=%s",
-                                     msg_count, event.get("device_id"), ml_score, severity)
+                            log.info("Processed %d events | %s score=%.3f pre_fail=%d",
+                                     msg_count, device_id, ml_score, is_pre_failure)
 
                 elif topic == TOPIC_STATUS:
-                    # Update device online status
                     with conn.cursor() as cur:
                         cur.execute(UPSERT_STATUS, {
-                            "device_id": event.get("device_id"),
-                            "lat":       event.get("lat"),
-                            "lng":       event.get("lng"),
-                            "severity":  "OK",
+                            "device_id":    event.get("device_id"),
+                            "lat":          event.get("lat"),
+                            "lng":          event.get("lng"),
+                            "severity":     "OK",
+                            "failure_type": "None",
+                            "uptime":       0,
                         })
                     conn.commit()
 
                 consumer.commit(message=msg)
 
             except psycopg2.OperationalError as e:
-                log.error("Postgres write failed: %s — reconnecting", e)
+                log.error("Postgres error: %s — reconnecting", e)
                 conn = connect_postgres()
                 ensure_schema(conn)
             except Exception as e:
-                log.error("Processing error for %s: %s", topic, e)
+                log.error("Processing error: %s", e)
                 try:
                     conn.rollback()
                 except Exception:
                     pass
 
-            # Periodic retention cleanup
             if time.time() - last_retention > 3600:
                 try:
                     run_retention(conn)
                     last_retention = time.time()
                 except Exception as e:
-                    log.warning("Retention cleanup failed: %s", e)
+                    log.warning("Retention failed: %s", e)
 
     finally:
         log.info("Closing consumer and DB connection")
