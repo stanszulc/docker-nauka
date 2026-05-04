@@ -1,1 +1,939 @@
-
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": {
+          "type": "grafana",
+          "uid": "-- Grafana --"
+        },
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "description": "ML Model Evaluation Dashboard — HVAC Predictive Maintenance",
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "id": 14,
+  "links": [],
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "panels": [],
+      "title": "📊 METRYKI MODELU ML — STANDARD BRANŻOWY",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 0,
+        "y": 1
+      },
+      "id": 10,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "\nWITH failures AS (\n  SELECT device_id, ts AS failure_ts\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n),\npre AS (\n  SELECT m.is_pre_failure FROM hvac_metrics m\n  JOIN failures f ON m.device_id = f.device_id\n    AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\n  WHERE m.failure_type = 'None'\n)\nSELECT NOW() AS time,\n  ROUND(AVG(is_pre_failure::float)::numeric, 3) AS \"Recall\"\nFROM pre\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Recall (czułość)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.6
+              },
+              {
+                "color": "green",
+                "value": 0.8
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 4,
+        "y": 1
+      },
+      "id": 11,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "\nWITH tp AS (\n  SELECT COUNT(*) AS n FROM hvac_metrics m\n  JOIN (SELECT device_id, ts AS failure_ts FROM (\n    SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%') t\n    WHERE failure_type != 'None' AND (prev='None' OR prev IS NULL)) f\n  ON m.device_id = f.device_id\n    AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\n  WHERE m.failure_type='None' AND m.is_pre_failure=1\n),\nfp AS (\n  SELECT COUNT(*) AS n FROM hvac_metrics\n  WHERE failure_type='None' AND is_pre_failure=1\n  AND device_id LIKE 'SIM_%' AND ts > NOW() - INTERVAL '2 hours'\n)\nSELECT NOW() AS time,\n  CASE WHEN (tp.n + fp.n) = 0 THEN 0\n  ELSE ROUND((tp.n::float / (tp.n + fp.n))::numeric, 3) END AS \"Precision\"\nFROM tp, fp\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Precision (dokładność)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "green",
+                "value": 120
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 8,
+        "y": 1
+      },
+      "id": 12,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "\nWITH failures AS (\n  SELECT device_id, ts AS failure_ts, failure_type\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n)\nSELECT NOW() AS time,\n  ROUND(AVG(EXTRACT(EPOCH FROM (f.failure_ts - m.ts)))::numeric, 0) AS \"Lead time (s)\"\nFROM hvac_metrics m\nJOIN failures f ON m.device_id = f.device_id\n  AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\nWHERE m.failure_type = 'None' AND m.is_pre_failure = 1\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Lead time — wykrycie przed awarią",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 12,
+        "y": 1
+      },
+      "id": 13,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "\nSELECT NOW() AS time,\n  COUNT(*) AS \"Fałszywe alarmy (FP)\"\nFROM hvac_metrics\nWHERE failure_type = 'None'\nAND is_pre_failure = 1\nAND device_id LIKE 'SIM_%'\nAND ts > NOW() - INTERVAL '1 hour'\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Fałszywe alarmy (FP) / 1h",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 16,
+        "y": 1
+      },
+      "id": 14,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM hvac_metrics m JOIN (SELECT device_id, ts AS fts FROM (SELECT device_id,ts,failure_type,LAG(failure_type)OVER(PARTITION BY device_id ORDER BY ts) AS p FROM hvac_metrics WHERE device_id LIKE 'SIM_%')t WHERE failure_type!='None' AND (p='None' OR p IS NULL))f ON m.device_id=f.device_id AND m.ts BETWEEN f.fts-INTERVAL'10 minutes' AND f.fts WHERE m.failure_type='None' AND m.is_pre_failure=1) AS \"TP\"",
+          "refId": "A"
+        }
+      ],
+      "title": "✅ True Positive (TP)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 10
+              },
+              {
+                "color": "red",
+                "value": 30
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 5,
+        "w": 4,
+        "x": 20,
+        "y": 1
+      },
+      "id": 15,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "textMode": "auto",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, (SELECT COUNT(*) FROM hvac_metrics m JOIN (SELECT device_id, ts AS fts FROM (SELECT device_id,ts,failure_type,LAG(failure_type)OVER(PARTITION BY device_id ORDER BY ts) AS p FROM hvac_metrics WHERE device_id LIKE 'SIM_%')t WHERE failure_type!='None' AND (p='None' OR p IS NULL))f ON m.device_id=f.device_id AND m.ts BETWEEN f.fts-INTERVAL'10 minutes' AND f.fts WHERE m.failure_type='None' AND m.is_pre_failure=0) AS \"FN\"",
+          "refId": "A"
+        }
+      ],
+      "title": "❌ False Negative (FN — pominięte)",
+      "type": "stat"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
+      "id": 2,
+      "panels": [],
+      "title": "🔍 OCENA PER TYP AWARII",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Recall"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "mode": "gradient",
+                  "type": "gauge"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.7
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 150
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Typ awarii"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "BEARING": {
+                        "color": "yellow",
+                        "index": 3,
+                        "text": "⚙ BEARING"
+                      },
+                      "CLOG": {
+                        "color": "orange",
+                        "index": 2,
+                        "text": "🔧 CLOG"
+                      },
+                      "HDF": {
+                        "color": "red",
+                        "index": 0,
+                        "text": "🔥 HDF"
+                      },
+                      "PWF": {
+                        "color": "orange",
+                        "index": 1,
+                        "text": "⚡ PWF"
+                      },
+                      "PWF,CLOG": {
+                        "color": "red",
+                        "index": 4,
+                        "text": "⚡🔧 PWF+CLOG"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg probability"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percentunit"
+              },
+              {
+                "id": "custom.width",
+                "value": 140
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Avg lead time (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "id": 20,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PCC52D03280B7034C"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "\nWITH failures AS (\n  SELECT device_id, ts AS failure_ts, failure_type\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n)\nSELECT \n  f.failure_type AS \"Typ awarii\",\n  COUNT(*) AS \"Próbki (10min okno)\",\n  SUM(m.is_pre_failure) AS \"Wykryte (TP)\",\n  COUNT(*) - SUM(m.is_pre_failure) AS \"Pominięte (FN)\",\n  ROUND(AVG(m.is_pre_failure::float)::numeric, 3) AS \"Recall\",\n  ROUND(AVG(m.fail_probability)::numeric, 3) AS \"Avg probability\",\n  ROUND(AVG(EXTRACT(EPOCH FROM (f.failure_ts - m.ts)))::numeric, 0) AS \"Avg lead time (s)\"\nFROM hvac_metrics m\nJOIN failures f ON m.device_id = f.device_id\n  AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\nWHERE m.failure_type = 'None'\nGROUP BY f.failure_type\nORDER BY \"Recall\" DESC\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "📋 Recall per typ awarii — okno 10 min przed awarią",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 15
+      },
+      "id": 3,
+      "panels": [],
+      "title": "📈 ANALIZA PROBABILISTYCZNA",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 30,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "PCC52D03280B7034C"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "\nWITH failures AS (\n  SELECT device_id, ts AS failure_ts, failure_type\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n)\nSELECT \n  ROUND(EXTRACT(EPOCH FROM (f.failure_ts - m.ts))::numeric/60, 1) AS \"Minut przed awarią (bucket)\",\n  ROUND(AVG(m.fail_probability)::numeric, 3) AS \"Avg fail_probability\",\n  COUNT(*) AS \"Próbki\"\nFROM hvac_metrics m\nJOIN failures f ON m.device_id = f.device_id\n  AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\nWHERE m.failure_type = 'None'\nGROUP BY 1\nORDER BY 1 DESC\n",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
+        }
+      ],
+      "title": "Fail_probability w minutach przed awarią",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 0.4
+              },
+              {
+                "color": "red",
+                "value": 0.7
+              }
+            ]
+          },
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 31,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "\nWITH failures AS (\n  SELECT device_id, date_trunc('minute', ts) AS minute_ts\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n)\nSELECT date_trunc('minute', m.ts) AS time,\n  ROUND(AVG(m.is_pre_failure::float)::numeric, 3) AS \"Recall (1 min okno)\"\nFROM hvac_metrics m\nJOIN failures f ON m.device_id = f.device_id\n  AND m.ts BETWEEN f.minute_ts - INTERVAL '10 minutes' AND f.minute_ts\nWHERE m.failure_type = 'None'\nAND m.ts >= NOW() - INTERVAL '2 hours'\nGROUP BY 1\nORDER BY 1\n",
+          "refId": "A"
+        }
+      ],
+      "title": "Recall trend (1 min okno)",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 24
+      },
+      "id": 4,
+      "panels": [],
+      "title": "📖 SŁOWNIK METRYK ML",
+      "type": "row"
+    },
+    {
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 25
+      },
+      "id": 40,
+      "options": {
+        "code": {
+          "language": "plaintext",
+          "showLineNumbers": false,
+          "showMiniMap": false
+        },
+        "content": "\n## Jak czytać te metryki?\n\n| Metryka | Co mierzy | Dobra wartość |\n|---------|-----------|---------------|\n| **Recall (czułość)** | % awarii które model wykrył przed wystąpieniem | > 70% |\n| **Precision (dokładność)** | % alarmów które były prawdziwymi zagrożeniami | > 70% |\n| **Lead time** | Ile sekund PRZED awarią model zaalarmował | > 120s (2 min) |\n| **FP (False Positive)** | Fałszywe alarmy — \"wilk, wilk!\" bez awarii | < 5/h |\n| **FN (False Negative)** | Pominięte awarie — najgroźniejsze! | < 10% |\n\n## Kompromis Precision vs Recall\n\nIm wyższy próg (threshold) → więcej Precision, mniej Recall (model ostrożniejszy)\nIm niższy próg → więcej Recall, mniej Precision (model agresywniejszy)\n\n**W predictive maintenance** preferujemy wyższy Recall kosztem Precision — \nlepiej mieć fałszywy alarm niż przegapić awarię maszyny.\n\n## Lead time = wartość biznesowa\n\nLead time 5 min → operator może zareagować i uniknąć awarii\nLead time 30s → za mało czasu na reakcję\n",
+        "mode": "markdown"
+      },
+      "pluginVersion": "11.4.0",
+      "title": "Wyjaśnienie metryk dla nie-data-scientistów",
+      "type": "text"
+    }
+  ],
+  "preload": false,
+  "refresh": "30s",
+  "schemaVersion": 40,
+  "tags": [
+    "hvac",
+    "ml-evaluation",
+    "predictive-maintenance"
+  ],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30m",
+    "to": "now"
+  },
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "HVAC ML Evaluation",
+  "uid": "hvac-ml-evaluation",
+  "version": 3,
+  "weekStart": ""
+}
