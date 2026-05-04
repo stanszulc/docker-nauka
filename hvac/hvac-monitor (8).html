@@ -1,0 +1,612 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"/>
+<title>HVAC Monitor</title>
+<link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Exo+2:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --green:#00ff88;--green-dim:#00cc66;--green-dark:#003a1a;--green-faint:#001a0d;
+  --amber:#ffaa00;--red:#ff3344;--red-dark:#2a0008;
+  --bg:#0a0c0a;--bg2:#0f120f;--bg3:#141814;--border:#1a2a1a;
+  --text:#00ff88;--text-dim:#00aa55;--text-muted:#336644;
+  --mono:'Share Tech Mono','Courier New',monospace;
+  --ui:'Exo 2',sans-serif;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--mono);-webkit-font-smoothing:antialiased;overscroll-behavior:none}
+button{font-family:var(--mono);cursor:pointer;border:none;outline:none;background:none}
+input[type=range]{-webkit-appearance:none;width:100%;height:3px;background:var(--bg3);border-radius:2px;outline:none}
+input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:18px;border-radius:50%;background:var(--green);cursor:pointer;border:2px solid var(--bg)}
+input[type=text]{background:var(--bg3);border:1px solid var(--border);border-radius:6px;color:var(--green);font-family:var(--mono);font-size:14px;padding:10px 14px;width:100%;outline:none}
+::-webkit-scrollbar{width:3px}
+::-webkit-scrollbar-track{background:var(--bg)}
+::-webkit-scrollbar-thumb{background:var(--green-dark);border-radius:2px}
+#root{max-width:480px;margin:0 auto}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+<script>
+window.addEventListener('load', function() {
+const {useState,useEffect,useRef,useCallback}=React;
+
+// ── AI4I 2020 physics ───────────────────────────────────────────────────────
+const R={
+  air_temp: {min:295.3,max:304.5,mean:300.0,std:2.0},
+  proc_temp:{min:305.7,max:313.8,mean:310.0,std:1.48},
+  rpm:      {min:1168, max:2886, mean:1538, std:179},
+  torque:   {min:3.8,  max:76.6, mean:40.0, std:9.97},
+  vibration:{min:0.01, max:2.0,  mean:0.04, std:0.02},
+};
+const BURN_THRESH=315.0, BURN_MAX=30;
+
+// AI4I 2020 failure definitions with shutdown conditions
+const FAILURE_DEFS={
+  HDF:{label:'Heat Dissipation Failure',desc:'Przegrzanie — brak chłodzenia',color:'#ff3344',
+       check:(s)=>{const dT=s.proc_temp-s.air_temp; return dT<8.6&&s.rpm<1380;}},
+  PWF:{label:'Power Failure',desc:'Awaria zasilania — moc poza zakresem',color:'#ff8800',
+       check:(s)=>{const pw=s.torque*(s.rpm*2*Math.PI/60); return pw<3500||pw>9000;}},
+  CLOG:{label:'Clogged Filter',desc:'Zapchany filtr — wzrost oporu przepływu',color:'#ff6600',
+       check:(s)=>{const dT=s.proc_temp-s.air_temp; return s.torque>60||dT>13.5;}},
+  BEARING:{label:'Bearing Failure',desc:'Uszkodzenie łożysk — wibracje',color:'#ffaa00',
+       check:(s)=>{return s.vibration>0.8;}},
+};
+
+// Failure persistence — failure must be active for N seconds before shutdown
+
+function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
+function randn(){let u=0,v=0;while(!u)u=Math.random();while(!v)v=Math.random();return Math.sqrt(-2*Math.log(u))*Math.cos(2*Math.PI*v)}
+function gauss(m,s,a,b){return clamp(m+randn()*s,a,b)}
+function toC(k){return k-273.15}
+
+function normalState(){
+  return {
+    air_temp: gauss(R.air_temp.mean, R.air_temp.std, R.air_temp.min, R.air_temp.max),
+    proc_temp:gauss(R.proc_temp.mean,R.proc_temp.std,R.proc_temp.min,R.proc_temp.max),
+    rpm:      gauss(R.rpm.mean,      R.rpm.std,      R.rpm.min,      R.rpm.max),
+    torque:   gauss(R.torque.mean,   R.torque.std,   R.torque.min,   R.torque.max),
+    vibration:gauss(R.vibration.mean,R.vibration.std,R.vibration.min,R.vibration.max),
+  };
+}
+
+// ── Device profile — losowany raz przy starcie sesji ──────────────────────
+// Każde urządzenie ma nieco inne charakterystyki — odchylenie ±std od nominalnych
+// współczynników krzywych anomalii. To symuluje zróżnicowanie fizycznych maszyn.
+function generateDeviceProfile(){
+  // Każdy parametr losowany z rozkładu normalnego wokół wartości nominalnej
+  // std=0.25 oznacza ±25% odchylenie od wartości bazowej
+  function rv(nominal,std){return clamp(nominal*(1+randn()*std),nominal*0.4,nominal*2.2);}
+  return {
+    // HEAT: szybkość narastania temperatury i stała czasowa
+    heatRate:    rv(0.0012,0.30),   // K/s bazowa — cel 15-20 min
+    heatDecay:   rv(120,   0.25),   // stała czasowa wykładniczej [s]
+    heatRpmDrop: rv(0.0079,0.35),   // rpm/s spadek przy HEAT
+    // CLOG: narastanie momentu i temperatury
+    clogTorque:  rv(0.0004,0.30),   // Nm/s — cel 15-20 min
+    clogTemp:    rv(0.0001,0.30),   // K/s
+    clogRpm:     rv(0.010, 0.35),   // rpm/s spadek
+    // BEARING: amplituda wibracji
+    bearingAmp:  rv(0.007, 0.35),   // amplituda na akumulator
+    bearingMax:  rv(1.8,   0.20),   // max amplituda
+    // DRIFT: bias temperatury
+    driftAir:    rv(0.020, 0.30),   // K/s bias air_temp
+    driftProc:   rv(0.022, 0.30),   // K/s bias proc_temp
+    // POWER: spadek RPM
+    powerDrop:   rv(0.0185,0.30),   // rpm bazowy drop — cel 15-20 min
+    powerDecay:  rv(25,    0.25),   // stała czasowa
+  };
+}
+
+function applyAnomaly(state,modes,baseRpm){
+  const s={...state,rpm:clamp(baseRpm,R.rpm.min,R.rpm.max)};
+  if(modes.has('HEAT')){s.proc_temp=clamp(s.proc_temp+5+randn()*0.3,R.proc_temp.min,R.proc_temp.max);s.rpm=clamp(s.rpm-400,R.rpm.min,1379)}
+  if(modes.has('CLOG')){s.torque=clamp(s.torque*1.6+randn()*2,R.torque.min,R.torque.max);s.proc_temp=clamp(s.proc_temp+2.5,R.proc_temp.min,R.proc_temp.max);s.rpm=clamp(s.rpm-150,R.rpm.min,R.rpm.max)}
+  if(modes.has('BEARING')){s.vibration=clamp(0.6+Math.random()*1.2,0.4,2.0);s.torque=clamp(s.torque+randn()*12,R.torque.min,R.torque.max)}
+  if(modes.has('DRIFT')){s.air_temp=clamp(s.air_temp+1.8+randn()*0.8,R.air_temp.min,R.air_temp.max);s.proc_temp=clamp(s.proc_temp+2.2+randn()*0.8,R.proc_temp.min,R.proc_temp.max)}
+  if(modes.has('POWER')){s.torque=clamp(s.torque*0.25,R.torque.min,15);s.rpm=clamp(s.rpm*0.55,R.rpm.min,900)}
+  return s;
+}
+
+function detectFailures(s){
+  const f=[], dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60);
+  if(dT<8.6&&s.rpm<1380)    f.push('HDF');
+  if(pw<3500||pw>9000)      f.push('PWF');
+  if(s.torque>60||dT>13.5) f.push('CLOG');
+  if(s.vibration>0.8)       f.push('BEARING');
+  return f;
+}
+
+function mlScore(failures,s){
+  if(!failures.length){
+    const dT=s.proc_temp-s.air_temp, pw=s.torque*(s.rpm*2*Math.PI/60);
+    const h=clamp(1-(dT-8.6)/6,0,1)*clamp(1-(s.rpm-1380)/500,0,1);
+    const p=pw<6500?clamp(1-(pw-3500)/3000,0,1):clamp((pw-6500)/2500,0,1);
+    const c=clamp((s.torque-40)/25,0,1);
+    const b=clamp((s.vibration-0.3)/0.5,0,1);
+    return clamp(Math.max(h,p,c,b)*0.38+0.02,0.02,0.39);
+  }
+  return clamp(0.42+(failures.length-1)*0.15+Math.random()*0.1,0.4,0.99);
+}
+
+function sev(sc){return sc<0.4?'OK':sc<0.7?'WARNING':'CRITICAL'}
+function sevColor(sc){return sc<0.4?'var(--green)':sc<0.7?'var(--amber)':'var(--red)'}
+
+// ── Fan canvas component ────────────────────────────────────────────────────
+function Fan({rpm,vibration,burned,modes}){
+  const cvs=useRef(null), rot=useRef(0), frame=useRef(null), last=useRef(null), smoke=useRef([]);
+  const bearing=modes&&modes.has('BEARING');
+  useEffect(()=>{
+    const c=cvs.current; if(!c) return;
+    const ctx=c.getContext('2d'), W=c.width, H=c.height, cx=W/2, cy=H/2, Rc=W*0.38, bl=Rc*0.82;
+    function draw(ts){
+      const dt=last.current?Math.min((ts-last.current)/1000,0.05):0.016; last.current=ts;
+      rot.current+=(burned?0:rpm)/60*2*Math.PI*dt;
+      const shk=bearing&&!burned?(Math.random()-0.5)*vibration*18:0;
+      ctx.clearRect(0,0,W,H);
+      ctx.beginPath();ctx.arc(cx,cy,Rc+8,0,Math.PI*2);ctx.strokeStyle=burned?'#331111':'#0a2a1a';ctx.lineWidth=2;ctx.stroke();
+      ctx.beginPath();ctx.arc(cx,cy,Rc*0.18,0,Math.PI*2);ctx.strokeStyle=burned?'#441111':'#113322';ctx.lineWidth=1.5;ctx.stroke();
+      for(let i=0;i<11;i++){
+        const a=rot.current+(i/11)*Math.PI*2;
+        ctx.beginPath();ctx.moveTo(cx+shk+Math.cos(a)*Rc*0.18,cy+Math.sin(a)*Rc*0.18);ctx.lineTo(cx+shk+Math.cos(a)*bl,cy+Math.sin(a)*bl);
+        ctx.lineWidth=3.5;ctx.lineCap='round';
+        if(burned) ctx.strokeStyle='#331111';
+        else if(bearing) ctx.strokeStyle=`rgba(255,${100+Math.floor(Math.random()*80)},0,0.9)`;
+        else{const sp=Math.min(rpm/2886,1),g=Math.floor(180+sp*75);ctx.strokeStyle=`rgb(0,${g},${Math.floor(g*0.55)})`;}
+        ctx.stroke();
+      }
+      ctx.beginPath();ctx.arc(cx+shk*0.3,cy,Rc*0.09,0,Math.PI*2);ctx.fillStyle=burned?'#221111':'#0f2a1a';ctx.fill();ctx.strokeStyle=burned?'#551111':'#00cc66';ctx.lineWidth=1.5;ctx.stroke();
+      if(burned){
+        if(Math.random()<0.25) smoke.current.push({x:cx+(Math.random()-.5)*20,y:cy-Rc*.3,vx:(Math.random()-.5)*.6,vy:-.8-Math.random()*.5,life:1,r:4+Math.random()*8});
+        smoke.current=smoke.current.filter(p=>p.life>0);
+        for(const p of smoke.current){ctx.beginPath();ctx.arc(p.x,p.y,p.r,0,Math.PI*2);ctx.fillStyle=`rgba(60,30,30,${p.life*.5})`;ctx.fill();p.x+=p.vx;p.y+=p.vy;p.r+=0.15;p.life-=0.018;}
+      }
+      frame.current=requestAnimationFrame(draw);
+    }
+    frame.current=requestAnimationFrame(draw);
+    return()=>cancelAnimationFrame(frame.current);
+  },[rpm,vibration,burned,bearing]);
+
+  return React.createElement('div',{style:{position:'relative',width:'100%',background:'#08100a',borderBottom:'1px solid #0d1f0d',display:'flex',flexDirection:'column',alignItems:'center',padding:'12px 0 8px'}},
+    React.createElement('canvas',{ref:cvs,width:240,height:190,style:{display:'block'}}),
+    burned&&React.createElement('div',{style:{color:'var(--red)',fontSize:11,letterSpacing:3,marginTop:4}},'SILNIK SPALONY — NACIŚNIJ RESET')
+  );
+}
+
+// ── Arc Gauge ───────────────────────────────────────────────────────────────
+function Gauge({label,value,min,max,unit,warn,danger}){
+  const cvs=useRef(null);
+  const isDanger=danger!=null&&value>=danger, isWarn=warn!=null&&value>=warn&&!isDanger;
+  const col=isDanger?'#ff3344':isWarn?'#ffaa00':'#00ff88';
+  useEffect(()=>{
+    const c=cvs.current; if(!c) return;
+    const ctx=c.getContext('2d'), W=c.width, H=c.height, cx=W/2, cy=H*.62, Rc=W*.38;
+    ctx.clearRect(0,0,W,H);
+    const sA=Math.PI*.75, eA=Math.PI*2.25, pct=Math.max(0,Math.min(1,(value-min)/(max-min))), vA=sA+pct*(eA-sA);
+    ctx.beginPath();ctx.arc(cx,cy,Rc,sA,eA);ctx.strokeStyle='#0d1f0d';ctx.lineWidth=5;ctx.lineCap='round';ctx.stroke();
+    ctx.beginPath();ctx.arc(cx,cy,Rc,sA,vA);ctx.strokeStyle=col;ctx.lineWidth=4;ctx.lineCap='round';ctx.stroke();
+    for(let i=0;i<=8;i++){const a=sA+(i/8)*(eA-sA);ctx.beginPath();ctx.moveTo(cx+Math.cos(a)*(Rc+4),cy+Math.sin(a)*(Rc+4));ctx.lineTo(cx+Math.cos(a)*(Rc+(i%4===0?9:6)),cy+Math.sin(a)*(Rc+(i%4===0?9:6)));ctx.strokeStyle='#1a3a1a';ctx.lineWidth=1;ctx.stroke();}
+  },[value,min,max,warn,danger]);
+
+  const disp=value>100?Math.round(value):value.toFixed(2);
+  return React.createElement('div',{style:{background:'#0d140d',border:`1px solid ${isDanger?'#3a1010':isWarn?'#3a2a00':'#0d2a0d'}`,borderRadius:10,padding:'8px 6px 6px',display:'flex',flexDirection:'column',alignItems:'center'}},
+    React.createElement('div',{style:{fontSize:9,letterSpacing:2,color:col,opacity:.7,marginBottom:2}},label),
+    React.createElement('canvas',{ref:cvs,width:100,height:66,style:{display:'block'}}),
+    React.createElement('div',{style:{fontSize:18,color:col,letterSpacing:1,lineHeight:1,marginTop:-2}},disp,
+      React.createElement('span',{style:{fontSize:9,opacity:.6,marginLeft:3}},unit)
+    )
+  );
+}
+
+// ── Login Screen ─────────────────────────────────────────────────────────────
+function LoginScreen({onConnect}){
+  const [id,setId]=useState('HVAC_01');
+  const [url,setUrl]=useState('http://92.5.14.76:8002');
+  const [latStr,setLatStr]=useState('50.0521');
+  const [lngStr,setLngStr]=useState('19.9345');
+  const [gpsStatus,setGpsStatus]=useState('idle'); // idle | trying | ok | denied | unavailable
+
+  const tryGps=useCallback(()=>{
+    if(!navigator.geolocation){setGpsStatus('unavailable');return;}
+    setGpsStatus('trying');
+    navigator.geolocation.getCurrentPosition(
+      p=>{
+        setLatStr(p.coords.latitude.toFixed(6));
+        setLngStr(p.coords.longitude.toFixed(6));
+        setGpsStatus('ok');
+      },
+      err=>{
+        // err.code: 1=denied, 2=unavailable, 3=timeout
+        setGpsStatus(err.code===1?'denied':'unavailable');
+      },
+      {enableHighAccuracy:true,timeout:8000,maximumAge:0}
+    );
+  },[]);
+
+  // try GPS automatically on mount
+  useEffect(()=>{tryGps();},[]);
+
+  const latOk=!isNaN(parseFloat(latStr))&&parseFloat(latStr)>=-90&&parseFloat(latStr)<=90;
+  const lngOk=!isNaN(parseFloat(lngStr))&&parseFloat(lngStr)>=-180&&parseFloat(lngStr)<=180;
+  const gpsReady=latOk&&lngOk;
+
+  const gpsLabel=gpsStatus==='trying'?'Pobieranie GPS...':gpsStatus==='ok'?'GPS aktywny':gpsStatus==='denied'?'Brak zgody — wpisz ręcznie':gpsStatus==='unavailable'?'GPS niedostępny — wpisz ręcznie':'Wpisz współrzędne lub pobierz GPS';
+  const gpsColor=gpsStatus==='ok'?'var(--green-dim)':gpsStatus==='trying'?'var(--text-muted)':'var(--amber)';
+
+  const handleConnect=()=>{
+    if(!id.trim()||!gpsReady) return;
+    onConnect({deviceId:id.trim().toUpperCase(),serverUrl:url.trim(),gps:{lat:parseFloat(latStr),lng:parseFloat(lngStr)},profile:generateDeviceProfile()});
+  };
+
+  const lbl={display:'block',fontSize:10,letterSpacing:3,color:'var(--text-muted)',textTransform:'uppercase',marginBottom:8};
+  const e=React.createElement;
+  return e('div',{style:{minHeight:'100dvh',background:'var(--bg)',display:'flex',flexDirection:'column',justifyContent:'center',padding:'32px 24px',maxWidth:420,margin:'0 auto'}},
+    e('div',{style:{marginBottom:40}},
+      e('div',{style:{fontSize:10,letterSpacing:5,color:'var(--text-dim)',marginBottom:6}},'HVAC MONITOR'),
+      e('div',{style:{fontSize:26,color:'var(--text)',lineHeight:1.3,fontFamily:'var(--ui)',fontWeight:300}},'Identyfikacja',e('br'),'urządzenia')
+    ),
+    e('div',{style:{marginBottom:18}},
+      e('label',{style:lbl},'Device ID'),
+      e('input',{type:'text',value:id,onChange:ev=>setId(ev.target.value),placeholder:'np. HVAC_01',style:{textTransform:'uppercase',letterSpacing:2}})
+    ),
+
+    e('div',{style:{marginBottom:18}},
+      e('label',{style:lbl},'Lokalizacja GPS'),
+      e('div',{style:{display:'flex',gap:6,marginBottom:6}},
+        e('input',{type:'text',value:latStr,onChange:ev=>setLatStr(ev.target.value),placeholder:'Szerokość (lat)',style:{flex:1,fontSize:12}}),
+        e('input',{type:'text',value:lngStr,onChange:ev=>setLngStr(ev.target.value),placeholder:'Długość (lng)',style:{flex:1,fontSize:12}})
+      ),
+      e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        e('div',{style:{flex:1,fontSize:11,color:gpsColor,letterSpacing:1}},gpsLabel),
+        e('button',{onClick:tryGps,style:{background:'var(--bg3)',border:'1px solid var(--border)',borderRadius:6,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'6px 12px',whiteSpace:'nowrap'}},
+          gpsStatus==='trying'?'...' : '↻ GPS'
+        )
+      )
+    ),
+    e('div',{style:{marginBottom:30}},
+      e('label',{style:lbl},'FastAPI server URL'),
+      e('input',{type:'text',value:url,onChange:ev=>setUrl(ev.target.value),placeholder:'http://92.5.14.76:8002'})
+    ),
+    e('button',{
+      onClick:handleConnect,
+      disabled:!id.trim()||!gpsReady,
+      style:{width:'100%',background:(id.trim()&&gpsReady)?'var(--green-dark)':'#0a0a0a',border:`1px solid ${(id.trim()&&gpsReady)?'var(--green-dim)':'var(--border)'}`,borderRadius:10,color:(id.trim()&&gpsReady)?'var(--green)':'var(--text-muted)',fontSize:12,letterSpacing:4,padding:'16px',transition:'all .2s',cursor:(id.trim()&&gpsReady)?'pointer':'not-allowed'}
+    },'POŁĄCZ I ROZPOCZNIJ'),
+    e('div',{style:{marginTop:20,textAlign:'center',fontSize:10,color:'var(--text-muted)',letterSpacing:2}},'AI4I 2020 · GPS wymagany')
+  );
+}
+
+// ── Monitor Screen ───────────────────────────────────────────────────────────
+const ANOMALY_BTNS=[
+  {key:'HEAT',   label:'Heat source',   sub:'proc_temp ↑  rpm ↓', icon:'▲'},
+  {key:'CLOG',   label:'Clog inlet',    sub:'torque ↑  temp ↑',   icon:'▼'},
+  {key:'BEARING',label:'Bearing damage',sub:'vibration ↑↑',       icon:'⚡'},
+  {key:'DRIFT',  label:'Sensor drift',  sub:'temp bias slow',      icon:'~'},
+  {key:'POWER',  label:'Power issue',   sub:'power ↓  /  PWF',     icon:'✕'},
+];
+
+function MonitorScreen({config}){
+  const [baseRpm,setBaseRpm]=useState(1538);
+  const [modes,setModes]=useState(new Set());
+  const [ss,setSs]=useState(()=>normalState());
+  const [fails,setFails]=useState([]);
+  const [score,setScore]=useState(0.05);
+  const [burn,setBurn]=useState(0);
+  const [burned,setBurned]=useState(false);
+  const [log,setLog]=useState([]);
+  const [sendSt,setSendSt]=useState('idle');
+  const logRef=useRef(null);
+
+  // Continuous physical state held in ref — mutated gradually each tick
+  const stateRef=useRef(null);
+  if(!stateRef.current) stateRef.current=normalState();
+  const uptimeRef=useRef(0);  // licznik sekund od ostatniego SERVICE
+  const accum=useRef({HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0});
+  // Refs so interval closure always sees latest values without re-registering
+  const modesRef=useRef(modes);
+  useEffect(()=>{modesRef.current=modes;},[modes]);
+  const baseRpmRef=useRef(baseRpm);
+  useEffect(()=>{baseRpmRef.current=baseRpm;},[baseRpm]);
+
+  const toggle=useCallback(k=>{if(burned)return;setModes(p=>{const n=new Set(p);n.has(k)?n.delete(k):n.add(k);return n;});},[burned]);
+  const reset=useCallback(()=>{
+    setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
+    stateRef.current=normalState();
+    uptimeRef.current=0;
+    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0};
+    setSs({...stateRef.current});
+  },[config.type]);
+
+  // SERVICE button — sends maintenance event and resets anomaly modes
+  const doService=useCallback(()=>{
+    const lastFails=stateRef.current?detectFailures(stateRef.current):[];
+    const payload={device_id:config.deviceId,
+      lat:+config.gps.lat.toFixed(4),lng:+config.gps.lng.toFixed(4),
+      air_temp:+(stateRef.current?.air_temp||300).toFixed(2),
+      proc_temp:+(stateRef.current?.proc_temp||310).toFixed(2),
+      rpm:Math.round(stateRef.current?.rpm||0),
+      torque:+(stateRef.current?.torque||0).toFixed(2),
+      vibration:+(stateRef.current?.vibration||0).toFixed(3),
+      ml_score:0,failure_type:'None',severity:'OK',
+      event_type:'service',
+      resolved_failure:lastFails.length?lastFails.join(','):'RESET',
+      ts:new Date().toISOString()};
+    if(config.serverUrl){
+      fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(3000)})
+        .then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));
+    }
+    setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
+    stateRef.current=normalState();
+    uptimeRef.current=0;
+    accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0};
+    setSs({...stateRef.current});
+  },[config]);
+
+  // Bufor próbek do uśredniania (10 próbek = 10s przy ticku 1s)
+  const bufferRef=useRef([]);
+  const BUFFER_SIZE=10;
+
+  useEffect(()=>{
+    if(burned) return;
+    const id=setInterval(()=>{
+      const cur=stateRef.current;
+      const ac=accum.current;
+      const m=modesRef.current;
+      const brpm=baseRpmRef.current;
+
+      // 1. Tiny sensor noise on current state (not re-sampled from scratch)
+      const N=0.03;
+      let nx={...cur,
+        air_temp:  clamp(cur.air_temp  +randn()*N*R.air_temp.std,  R.air_temp.min,  R.air_temp.max),
+        proc_temp: clamp(cur.proc_temp +randn()*N*R.proc_temp.std, R.proc_temp.min, R.proc_temp.max),
+        torque:    clamp(cur.torque    +randn()*N*R.torque.std,    R.torque.min,    R.torque.max),
+        vibration: clamp(cur.vibration +randn()*N*0.01,            R.vibration.min, R.vibration.max),
+      };
+
+      // 2. Mean-reversion toward nominal when anomaly is OFF
+      const MR=0.025;
+      if(!m.has('HEAT')&&!m.has('CLOG')&&!m.has('DRIFT'))
+        nx.proc_temp=clamp(nx.proc_temp+(R.proc_temp.mean-nx.proc_temp)*MR,R.proc_temp.min,R.proc_temp.max);
+      if(!m.has('DRIFT'))
+        nx.air_temp=clamp(nx.air_temp+(R.air_temp.mean-nx.air_temp)*MR,R.air_temp.min,R.air_temp.max);
+      if(!m.has('CLOG')&&!m.has('BEARING'))
+        nx.torque=clamp(nx.torque+(R.torque.mean-nx.torque)*MR,R.torque.min,R.torque.max);
+      if(!m.has('BEARING'))
+        nx.vibration=clamp(nx.vibration+(0.03-nx.vibration)*0.08,R.vibration.min,0.07);
+
+      // rpm tracks baseRpm slider with slight lag
+      nx.rpm=clamp(cur.rpm+(brpm-cur.rpm)*0.05+randn()*N*R.rpm.std,R.rpm.min,R.rpm.max);
+
+
+      // 3. Gradual anomaly curves (accumulator-driven)
+      // Profil urządzenia — losowane przy starcie, unikalne per sesja
+      const pr=config.profile;
+
+      if(m.has('HEAT')){
+        ac.HEAT++;
+        const rate=pr.heatRate*Math.exp(ac.HEAT/pr.heatDecay);
+        nx.proc_temp=clamp(nx.proc_temp+rate+randn()*0.015,R.proc_temp.min,R.proc_temp.max);
+        nx.rpm=clamp(nx.rpm-pr.heatRpmDrop+randn()*3,R.rpm.min,R.rpm.max);
+      } else { ac.HEAT=Math.max(0,ac.HEAT-2); }
+
+      if(m.has('CLOG')){
+        ac.CLOG++;
+        nx.torque=clamp(nx.torque+pr.clogTorque+randn()*0.04,R.torque.min,R.torque.max);
+        nx.proc_temp=clamp(nx.proc_temp+pr.clogTemp+randn()*0.01,R.proc_temp.min,R.proc_temp.max);
+        nx.rpm=clamp(nx.rpm-pr.clogRpm+randn()*2,R.rpm.min,R.rpm.max);
+      } else { ac.CLOG=Math.max(0,ac.CLOG-1); }
+
+      if(m.has('BEARING')){
+        ac.BEARING++;
+        const amp=clamp(0.04+ac.BEARING*pr.bearingAmp,0.04,pr.bearingMax);
+        nx.vibration=clamp(amp*(0.7+0.3*Math.sin(ac.BEARING*0.9))+Math.abs(randn()*0.015),0.01,2.0);
+        nx.torque=clamp(nx.torque+randn()*0.35,R.torque.min,R.torque.max);
+      } else { ac.BEARING=Math.max(0,ac.BEARING-2); }
+
+      if(m.has('DRIFT')){
+        ac.DRIFT++;
+        nx.air_temp= clamp(nx.air_temp +pr.driftAir +randn()*0.004,R.air_temp.min, R.air_temp.max);
+        nx.proc_temp=clamp(nx.proc_temp+pr.driftProc+randn()*0.004,R.proc_temp.min,R.proc_temp.max);
+      } else { ac.DRIFT=Math.max(0,ac.DRIFT-1); }
+
+
+      if(m.has('POWER')){
+        ac.POWER++;
+        const drop=pr.powerDrop*Math.exp(-ac.POWER/pr.powerDecay)+0.015;
+        nx.rpm=clamp(nx.rpm-drop+randn()*4,R.rpm.min,R.rpm.max);
+        nx.torque=clamp(nx.torque+(Math.random()-0.5)*2.5,R.torque.min,R.torque.max);
+      } else { ac.POWER=Math.max(0,ac.POWER-2); }
+
+      stateRef.current=nx;
+      uptimeRef.current+=1;  // +1 sekunda per tick
+      const f=detectFailures(nx);
+      const sc=mlScore(f,nx);
+      setSs({...nx});setFails(f);setScore(sc);
+
+      // Thermal burn damage
+      if(nx.proc_temp>=BURN_THRESH){setBurn(p=>{const n=p+1;if(n>=BURN_MAX)setBurned(true);return Math.min(n,BURN_MAX);});}
+      else setBurn(p=>Math.max(0,p-0.3));
+
+      // Failure active — strumień danych nie jest zatrzymywany (POC mode)
+      // Operator widzi historię awarii w Grafanie jako ciągły trend
+
+      // Dodaj próbkę do bufora
+      bufferRef.current.push({
+        air_temp:nx.air_temp, proc_temp:nx.proc_temp, rpm:nx.rpm,
+        torque:nx.torque, vibration:nx.vibration,
+        ml_score:sc, f, sc
+      });
+
+      // Co BUFFER_SIZE próbek — wyślij średnią
+      const ts=new Date().toLocaleTimeString('pl-PL');
+      if(bufferRef.current.length>=BUFFER_SIZE){
+        const buf=bufferRef.current;
+        const avg=(key)=>buf.reduce((s,p)=>s+p[key],0)/buf.length;
+        // Failure type z ostatniej próbki (najnowsza informacja)
+        const lastF=buf[buf.length-1].f;
+        const lastSc=buf[buf.length-1].sc;
+        const payload={
+          device_id:config.deviceId,
+          lat:+config.gps.lat.toFixed(4), lng:+config.gps.lng.toFixed(4),
+          air_temp:+avg('air_temp').toFixed(2),
+          proc_temp:+avg('proc_temp').toFixed(2),
+          rpm:Math.round(avg('rpm')),
+          torque:+avg('torque').toFixed(2),
+            vibration:+avg('vibration').toFixed(3),
+          ml_score:+avg('ml_score').toFixed(3),
+          failure_type:lastF.length?lastF.join(','):'None',
+          severity:sev(lastSc),
+          event_type:'telemetry',
+          uptime_seconds:uptimeRef.current,
+          ts:new Date().toISOString(),
+          // Profil urządzenia — dla generatora danych treningowych
+          device_profile:{
+            heatRate:+config.profile.heatRate.toFixed(4),
+            heatDecay:+config.profile.heatDecay.toFixed(1),
+            clogTorque:+config.profile.clogTorque.toFixed(4),
+            bearingAmp:+config.profile.bearingAmp.toFixed(4),
+          }
+        };
+        bufferRef.current=[];
+        setLog(p=>[{ts,payload,f:lastF,sc:lastSc},...p].slice(0,30));
+        if(config.serverUrl){fetch(`${config.serverUrl}/event`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload),signal:AbortSignal.timeout(5000)}).then(()=>setSendSt('ok')).catch(()=>setSendSt('err'));}
+      } else {
+        // Aktualizuj log lokalnie nawet gdy nie wysyłamy
+        const previewPayload={air_temp:+nx.air_temp.toFixed(2),proc_temp:+nx.proc_temp.toFixed(2),rpm:Math.round(nx.rpm),torque:+nx.torque.toFixed(2),vibration:+nx.vibration.toFixed(3),ml_score:+sc.toFixed(3),failure_type:f.length?f.join(','):'None',severity:sev(sc),buffering:`${bufferRef.current.length}/${BUFFER_SIZE}`};
+        setLog(p=>[{ts,payload:previewPayload,f,sc},...p].slice(0,30));
+      }
+    },1000);
+    return()=>clearInterval(id);
+  },[burned,config]);
+
+  useEffect(()=>{if(logRef.current)logRef.current.scrollTop=0;},[log.length]);
+
+  const sc2=sevColor(score), sv=sev(score);
+  const dT=(ss.proc_temp-ss.air_temp), pw=ss.torque*(ss.rpm*2*Math.PI/60), burnPct=(burn/BURN_MAX)*100;
+
+  const e=React.createElement;
+  return e('div',{style:{maxWidth:480,margin:'0 auto',background:'var(--bg)',minHeight:'100dvh'}},
+    // top bar
+    e('div',{style:{background:'var(--bg2)',borderBottom:`1px solid ${burned||sv==='CRITICAL'?'#3a1010':'#0d1f0d'}`,padding:'10px 16px',display:'flex',justifyContent:'space-between',alignItems:'center'}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        e('div',{style:{width:7,height:7,borderRadius:'50%',background:burned?'var(--red)':sc2}}),
+        e('span',{style:{fontSize:11,letterSpacing:2,color:sc2}},`${config.deviceId}`)
+      ),
+      e('div',{style:{display:'flex',gap:8,alignItems:'center'}},
+        e('span',{style:{fontSize:10,color:'var(--text-muted)',letterSpacing:1}},sendSt==='ok'?'↑ OK 10s':sendSt==='err'?'↑ ERR':'● BUF '+bufferRef.current.length+'/10'),
+        fails.length>0&&!burned&&e('button',{onClick:doService,style:{background:'#1a0505',border:'1px solid var(--red)',borderRadius:5,color:'var(--red)',fontSize:10,letterSpacing:2,padding:'4px 10px',fontWeight:'bold'}},'🔧 SERVICE'),
+        !burned&&e('button',{onClick:reset,style:{background:'transparent',border:'1px solid #1a3a1a',borderRadius:5,color:'var(--text-dim)',fontSize:10,letterSpacing:2,padding:'4px 10px'}},'RESET')
+      )
+    ),
+    // fan
+    e(Fan,{rpm:ss.rpm,vibration:ss.vibration,burned,modes}),
+    // Active failure banner — dane nadal płyną (POC mode)
+    fails.length>0&&!burned&&e('div',{style:{margin:'0 12px 4px',background:'#1a0505',border:'1px solid #3a1010',borderRadius:8,padding:'8px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('div',{style:{display:'flex',alignItems:'center',gap:8}},
+        e('span',{style:{fontSize:10,color:'var(--red)',letterSpacing:2}},'⚠ AWARIA AKTYWNA:'),
+        e('span',{style:{fontSize:11,color:'#ff6655',letterSpacing:1}},fails.join(' + '))
+      ),
+      e('button',{onClick:doService,style:{background:'var(--red)',border:'none',borderRadius:6,color:'#000',fontSize:10,letterSpacing:2,padding:'5px 12px',fontWeight:'bold',cursor:'pointer'}},'🔧 SERVICE')
+    ),
+    burned&&e('div',{style:{margin:'0 12px 4px',background:'#1a0505',border:'2px solid var(--red)',borderRadius:8,padding:'8px 14px',display:'flex',alignItems:'center',justifyContent:'space-between'}},
+      e('span',{style:{fontSize:10,color:'var(--red)',letterSpacing:2}},'⚠ SILNIK SPALONY'),
+      e('button',{onClick:doService,style:{background:'var(--red)',border:'none',borderRadius:6,color:'#000',fontSize:10,letterSpacing:2,padding:'5px 12px',fontWeight:'bold',cursor:'pointer'}},'🔧 WYMIEŃ')
+    ),
+    // burn bar
+    burn>0&&!burned&&e('div',{style:{padding:'6px 16px 0'}},
+      e('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:3}},
+        e('span',{style:{fontSize:9,letterSpacing:2,color:'var(--red)',opacity:.8}},'USZKODZENIE TERMICZNE'),
+        e('span',{style:{fontSize:9,color:'var(--red)'}},`${Math.round(burnPct)}%`)
+      ),
+      e('div',{style:{height:3,background:'#1a0505',borderRadius:2,overflow:'hidden'}},
+        e('div',{style:{height:'100%',width:`${burnPct}%`,background:'var(--red)',borderRadius:2,transition:'width .5s'}})
+      )
+    ),
+    // ml score
+    e('div',{style:{padding:'10px 16px 4px'}},
+      e('div',{style:{display:'flex',justifyContent:'space-between',marginBottom:4}},
+        e('span',{style:{fontSize:9,letterSpacing:2,color:'var(--text-muted)'}},'ML SCORE (RANDOM FOREST)'),
+        e('span',{style:{fontSize:11,color:sc2,letterSpacing:1}},`${score.toFixed(3)} · ${sv}`)
+      ),
+      e('div',{style:{height:3,background:'#0d1a0d',borderRadius:2,overflow:'hidden'}},
+        e('div',{style:{height:'100%',width:`${score*100}%`,background:sc2,borderRadius:2,transition:'width .4s,background .4s'}})
+      )
+    ),
+    // failure badges
+    e('div',{style:{padding:'8px 16px',display:'flex',gap:6,flexWrap:'wrap',alignItems:'center'}},
+      ['HDF','PWF','CLOG','BEARING'].map(k=>e('div',{key:k,style:{fontSize:9,letterSpacing:2,padding:'4px 10px',borderRadius:5,border:`1px solid ${fails.includes(k)?'#3a1010':'#0d1f0d'}`,background:fails.includes(k)?'var(--red-dark)':'#0a0c0a',color:fails.includes(k)?'var(--red)':'var(--text-muted)',transition:'all .3s'}},k)),
+      e('div',{style:{fontSize:9,color:'var(--text-muted)',marginLeft:'auto',letterSpacing:1}},`ΔT ${dT.toFixed(1)}K · ${(pw/1000).toFixed(1)}kW`)
+    ),
+    // gauges
+    e('div',{style:{padding:'0 12px 8px'}},
+      e('div',{style:{fontSize:9,letterSpacing:3,color:'var(--text-muted)',marginBottom:8,paddingLeft:4}},'SENSORY'),
+      e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
+        e(Gauge,{label:'AIR TEMP',value:toC(ss.air_temp),min:toC(R.air_temp.min),max:toC(R.air_temp.max),unit:'°C',warn:28}),
+        e(Gauge,{label:'PROC TEMP',value:toC(ss.proc_temp),min:toC(R.proc_temp.min),max:toC(R.proc_temp.max),unit:'°C',warn:38,danger:41.5}),
+        e(Gauge,{label:'RPM',value:ss.rpm,min:R.rpm.min,max:R.rpm.max,unit:'rpm',warn:2500}),
+        e(Gauge,{label:'TORQUE',value:ss.torque,min:R.torque.min,max:R.torque.max,unit:'Nm',warn:60,danger:70}),
+        e(Gauge,{label:'VIBRATION',value:ss.vibration,min:0,max:2,unit:'mm/s²',warn:0.4,danger:0.9}),
+
+      )
+    ),
+    // anomaly injector
+    e('div',{style:{padding:'0 12px 8px'}},
+      e('div',{style:{fontSize:9,letterSpacing:3,color:'var(--text-muted)',marginBottom:8,paddingLeft:4}},'ANOMALY INJECTOR'),
+      e('div',{style:{background:'var(--bg2)',border:'1px solid #0d1f0d',borderRadius:8,padding:'10px 14px',marginBottom:8,display:'flex',alignItems:'center',gap:12}},
+        e('span',{style:{fontSize:9,letterSpacing:2,color:'var(--text-muted)',whiteSpace:'nowrap'}},'BASE RPM'),
+        e('input',{type:'range',min:R.rpm.min,max:R.rpm.max,step:10,value:baseRpm,onChange:ev=>setBaseRpm(+ev.target.value)}),
+        e('span',{style:{fontSize:12,color:'var(--green)',minWidth:36,textAlign:'right'}},baseRpm)
+      ),
+      e('div',{style:{display:'flex',flexDirection:'column',gap:6}},
+        ANOMALY_BTNS.map(({key,label,sub,icon})=>{
+          const on=modes.has(key);
+          return e('button',{key,onClick:()=>toggle(key),disabled:burned,style:{background:on?'var(--green-dark)':'var(--bg2)',border:`1px solid ${on?'var(--green-dim)':'#0d1f0d'}`,borderRadius:8,padding:'11px 14px',display:'flex',alignItems:'center',gap:12,textAlign:'left',transition:'all .15s'}},
+            e('span',{style:{fontSize:13,color:on?'var(--green)':'var(--text-muted)',width:18}},icon),
+            e('div',{style:{flex:1}},
+              e('div',{style:{fontSize:11,letterSpacing:2,color:on?'var(--green)':'var(--text-dim)'}},label.toUpperCase()),
+              e('div',{style:{fontSize:9,color:'var(--text-muted)',letterSpacing:1,marginTop:2}},sub)
+            ),
+            on&&e('span',{style:{fontSize:9,color:'var(--green)',letterSpacing:2}},'ON')
+          );
+        })
+      )
+    ),
+    // json stream
+    e('div',{style:{padding:'0 12px 24px'}},
+      e('div',{style:{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:8,paddingLeft:4}},
+        e('span',{style:{fontSize:9,letterSpacing:3,color:'var(--text-muted)'}},'LIVE JSON STREAM'),
+        e('span',{style:{width:7,height:7,borderRadius:'50%',background:sendSt==='err'?'var(--red)':'var(--green)',display:'inline-block'}})
+      ),
+      e('div',{ref:logRef,style:{background:'#060c06',border:'1px solid #0a1a0a',borderRadius:8,padding:'10px 12px',maxHeight:260,overflowY:'auto',fontFamily:'var(--mono)'}},
+        log.map((entry,i)=>e('div',{key:i,style:{marginBottom:10}},
+          e('div',{style:{fontSize:9,color:entry.f.length?'var(--red)':entry.sc>.4?'var(--amber)':'#1a5a2a',letterSpacing:1,marginBottom:2}},
+            `[${entry.ts}] ${entry.f.length?'FAILURE: '+entry.f.join(', '):'SCORE: '+entry.sc.toFixed(3)}`
+          ),
+          e('div',{style:{fontSize:9,lineHeight:1.8}},
+            Object.entries(entry.payload).map(([k,v])=>{
+              const bad=(k==='failure_type'&&v!=='None')||(k==='ml_score'&&v>.4)||(k==='severity'&&v!=='OK');
+              return e('div',{key:k,style:{color:bad?(v==='CRITICAL'?'#cc2233':'var(--amber)'):'#1a4a2a'}},
+                `  "${k}": ${typeof v==='string'?`"${v}"`:v},`
+              );
+            })
+          )
+        ))
+      )
+    )
+  );
+}
+
+// ── App root ─────────────────────────────────────────────────────────────────
+function App(){
+  const [cfg,setCfg]=useState(null);
+  return cfg?React.createElement(MonitorScreen,{config:cfg}):React.createElement(LoginScreen,{onConnect:setCfg});
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(App));
+}); // end window.onload
+</script>
+</body>
+</html>
