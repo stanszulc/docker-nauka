@@ -1,14 +1,16 @@
 """
-hvac_consumer v2 — ML Consumer
-Reads from Kafka hvac_telemetry, runs XGBoost classifier inference,
+hvac_consumer v3 — ML Consumer
+Reads from Kafka hvac_telemetry, runs XGBoost v5 classifier inference,
 writes enriched records to PostgreSQL.
 
-Changes vs v1:
-- Removed tool_wear, product_type (CNC-specific)
-- New failure types: HDF, PWF, CLOG, BEARING
-- Classifier model (is_pre_failure 0/1) instead of RUL regressor
-- uptime_seconds — continuous counter per device (resets on SERVICE)
-- session_id support
+Changes vs v2:
+- Rolling buffer na 3 oknach: SHORT=5, MID=20, LONG=60 ticków
+- load_to_temp_ratio = power_w / (delta_temp + 1e-3)
+- trend_sl = ma_short - ma_long, trend_ml = ma_mid - ma_long
+- thermal_instability, mechanical_instability cross-features
+- proximity: hdf_margin, pwf_margin, load_ratio_trend
+- buffer_fill_short/mid/long
+- Kompatybilny z hvac_classifier_v5.pkl
 """
 
 import os
@@ -33,7 +35,7 @@ TOPIC_STATUS     = os.getenv("TOPIC_STATUS",     "hvac_status")
 CONSUMER_GROUP   = os.getenv("CONSUMER_GROUP",   "hvac_ml_group")
 POSTGRES_DSN     = os.getenv("POSTGRES_DSN",     "postgresql://kafka:kafka@postgres:5432/events")
 MODEL_PATH       = os.getenv("MODEL_PATH",       "/app/model/hvac_rf_model.pkl")
-ALERT_THRESHOLD  = float(os.getenv("ALERT_THRESHOLD",  "0.4"))
+ALERT_THRESHOLD  = float(os.getenv("ALERT_THRESHOLD",  "0.5"))
 RETENTION_HOURS  = int(os.getenv("RETENTION_HOURS",    "24"))
 LOG_LEVEL        = os.getenv("LOG_LEVEL",        "INFO")
 
@@ -43,6 +45,19 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+
+# ── Rolling window config (musi zgadzać się z generate_v5.py) ─────────────────
+WIN_SHORT = 5
+WIN_MID   = 20
+WIN_LONG  = 60
+
+BASE_SENSORS = [
+    'air_temp', 'proc_temp', 'rpm', 'torque',
+    'vibration', 'delta_temp', 'power_w',
+    'proc_temp_velocity', 'rpm_velocity',
+    'torque_velocity', 'vibration_velocity',
+    'load_to_temp_ratio',
+]
 
 # ── Database schema ───────────────────────────────────────────────────────────
 SCHEMA_SQL = """
@@ -108,48 +123,114 @@ CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type ON hvac_alerts_log (event_
 
 RETENTION_SQL = "DELETE FROM hvac_metrics WHERE ts < NOW() - INTERVAL '{hours} hours';"
 
-# ── ML Model ──────────────────────────────────────────────────────────────────
-DEVICE_BUFFERS: dict = {}
-WINDOW = 20
-DEVICE_UPTIME: dict = {}
+# ── Per-device rolling buffer ─────────────────────────────────────────────────
+class DeviceBuffer:
+    """
+    Trzyma historię WIN_LONG próbek per urządzenie.
+    Liczy rolling features identycznie jak generate_v5.py.
+    """
+    def __init__(self):
+        self.bufs   = {s: np.zeros(WIN_LONG, dtype=np.float32) for s in BASE_SENSORS}
+        self.counts = {s: 0 for s in BASE_SENSORS}
+        self.step   = 0
 
-BASE_FEATURES = [
-    'air_temp', 'proc_temp', 'rpm', 'torque',
-    'vibration', 'delta_temp', 'power_w',
-    'proc_temp_velocity', 'rpm_velocity',
-    'torque_velocity', 'vibration_velocity',
-]
+    def push(self, sensor_row: dict):
+        for s in BASE_SENSORS:
+            val = sensor_row.get(s, 0.0)
+            c   = self.counts[s]
+            if c < WIN_LONG:
+                self.bufs[s][c] = val
+            else:
+                self.bufs[s][:-1] = self.bufs[s][1:]
+                self.bufs[s][-1]  = val
+            self.counts[s] = min(c + 1, WIN_LONG)
+        self.step += 1
+
+    def build_features(self, uptime_seconds: float) -> dict:
+        feats = {}
+
+        # Surowe sensory (ostatnia wartość)
+        for s in BASE_SENSORS:
+            n = self.counts[s]
+            feats[s] = float(self.bufs[s][n-1]) if n > 0 else 0.0
+
+        # Rolling features per sensor
+        for s in BASE_SENSORS:
+            n   = self.counts[s]
+            buf = self.bufs[s][:n]
+
+            if n == 0:
+                short, mid, long_, std_mid = 0.0, 0.0, 0.0, 0.0
+            else:
+                short   = float(buf[-WIN_SHORT:].mean()) if n >= WIN_SHORT else float(buf.mean())
+                mid     = float(buf[-WIN_MID:].mean())   if n >= WIN_MID   else float(buf.mean())
+                long_   = float(buf.mean())
+                std_mid = float(buf[-WIN_MID:].std())    if n >= WIN_MID   else (float(buf.std()) if n > 1 else 0.0)
+
+            feats[f'{s}_ma_short']  = short
+            feats[f'{s}_ma_mid']    = mid
+            feats[f'{s}_ma_long']   = long_
+            feats[f'{s}_trend_sl']  = short - long_
+            feats[f'{s}_trend_ml']  = mid   - long_
+            feats[f'{s}_std_mid']   = std_mid
+
+        # Buffer fill ratios
+        n_steps = self.step
+        feats['buffer_fill_short'] = min(1.0, n_steps / WIN_SHORT)
+        feats['buffer_fill_mid']   = min(1.0, n_steps / WIN_MID)
+        feats['buffer_fill_long']  = min(1.0, n_steps / WIN_LONG)
+
+        # Uptime
+        feats['uptime_norm'] = uptime_seconds / 1800.0
+
+        # Proximity features
+        delta_temp = feats.get('delta_temp', 10.0)
+        power_w    = feats.get('power_w', 6500.0)
+        feats['hdf_margin']  = delta_temp - 8.6
+        feats['pwf_low']     = power_w - 3500
+        feats['pwf_high']    = 9000 - power_w
+        feats['pwf_margin']  = min(feats['pwf_low'], feats['pwf_high'])
+
+        # Cross-features
+        pt_std  = feats.get('proc_temp_std_mid', 0.0)
+        dt_std  = feats.get('delta_temp_std_mid', 0.0)
+        vib_std = feats.get('vibration_std_mid', 0.0)
+        tor_std = feats.get('torque_std_mid', 0.0)
+        feats['thermal_instability']    = pt_std * dt_std
+        feats['mechanical_instability'] = vib_std * tor_std
+        feats['load_ratio_trend']       = feats.get('load_to_temp_ratio_trend_sl', 0.0)
+
+        return feats
+
+    def reset(self):
+        self.bufs   = {s: np.zeros(WIN_LONG, dtype=np.float32) for s in BASE_SENSORS}
+        self.counts = {s: 0 for s in BASE_SENSORS}
+        self.step   = 0
 
 
+# ── Global state ──────────────────────────────────────────────────────────────
+DEVICE_BUFFERS: dict[str, DeviceBuffer] = {}
+DEVICE_UPTIME:  dict = {}
+
+
+def get_or_create_buffer(device_id: str) -> DeviceBuffer:
+    if device_id not in DEVICE_BUFFERS:
+        DEVICE_BUFFERS[device_id] = DeviceBuffer()
+    return DEVICE_BUFFERS[device_id]
+
+
+# ── Model ─────────────────────────────────────────────────────────────────────
 def load_model(path: str):
     if not os.path.exists(path):
         log.warning("Model not found at %s — using heuristic ml_score", path)
         return None
     bundle = joblib.load(path)
-    log.info("Model loaded: %s | type=%s features=%d",
-             path, bundle.get('model_type', 'unknown'), len(bundle.get('feature_cols', [])))
+    log.info("Model loaded: %s | version=%s features=%d threshold=%.2f",
+             path,
+             bundle.get('version', '?'),
+             len(bundle.get('feature_cols', [])),
+             bundle.get('threshold', 0.5))
     return bundle
-
-
-def _engineer_row(buf: list, uptime_seconds: float = 0.0) -> dict:
-    n = len(buf)
-    feats = {'uptime_norm': uptime_seconds / 1800.0}
-
-    for feat in BASE_FEATURES:
-        vals = [r.get(feat, 0.0) for r in buf]
-        feats[f'{feat}_rmean'] = float(np.mean(vals))
-        feats[f'{feat}_rgrad'] = float(np.mean(np.diff(vals))) if n > 1 else 0.0
-        feats[f'{feat}_rstd']  = float(np.std(vals)) if n > 1 else 0.0
-
-    last = buf[-1]
-    feats['proc_temp_rate'] = feats['proc_temp_rgrad']
-    feats['rpm_rate']       = feats['rpm_rgrad']
-    feats['torque_rate']    = feats['torque_rgrad']
-    feats['vibration_rate'] = feats['vibration_rgrad']
-    feats['hdf_margin']     = last.get('delta_temp', 10.0) - 8.6
-    feats['pwf_margin']     = min(last.get('power_w', 6500) - 3500,
-                                  9000 - last.get('power_w', 6500))
-    return feats
 
 
 def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
@@ -162,49 +243,44 @@ def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
 
     try:
         device_id = event["device_id"]
-        dT    = event.get("proc_temp", 310) - event.get("air_temp", 300)
-        power = event.get("torque", 40) * (event.get("rpm", 1538) * 2 * np.pi / 60)
+        buf       = get_or_create_buffer(device_id)
 
-        prev = DEVICE_BUFFERS.get(device_id, [{}])[-1] if DEVICE_BUFFERS.get(device_id) else {}
+        # Oblicz pochodne
+        dT    = event.get("proc_temp", 310.0) - event.get("air_temp", 300.0)
+        power = event.get("torque", 40.0) * (event.get("rpm", 1538) * 2 * np.pi / 60)
+        ltr   = power / (abs(dT) + 1e-3)
+
+        # Velocity — różnica względem ostatniej próbki w buforze
+        prev_proc_temp  = float(buf.bufs['proc_temp'][buf.counts['proc_temp']-1])  if buf.counts['proc_temp']  > 0 else event.get("proc_temp",  310.0)
+        prev_rpm        = float(buf.bufs['rpm'][buf.counts['rpm']-1])              if buf.counts['rpm']        > 0 else event.get("rpm",         1538)
+        prev_torque     = float(buf.bufs['torque'][buf.counts['torque']-1])        if buf.counts['torque']     > 0 else event.get("torque",       40.0)
+        prev_vibration  = float(buf.bufs['vibration'][buf.counts['vibration']-1])  if buf.counts['vibration']  > 0 else event.get("vibration",    0.03)
 
         sensor_row = {
-            "air_temp":           event.get("air_temp",   300.0),
-            "proc_temp":          event.get("proc_temp",  310.0),
-            "rpm":                event.get("rpm",         1538),
-            "torque":             event.get("torque",       40.0),
-            "vibration":          event.get("vibration",   0.03),
-            "delta_temp":         dT,
-            "power_w":            power,
-            "proc_temp_velocity": event.get("proc_temp", 310.0) - prev.get("proc_temp", 310.0),
-            "rpm_velocity":       event.get("rpm",  1538) - prev.get("rpm",  1538),
-            "torque_velocity":    event.get("torque", 40.0) - prev.get("torque", 40.0),
-            "vibration_velocity": event.get("vibration", 0.03) - prev.get("vibration", 0.03),
+            'air_temp':             event.get("air_temp",   300.0),
+            'proc_temp':            event.get("proc_temp",  310.0),
+            'rpm':                  float(event.get("rpm",  1538)),
+            'torque':               event.get("torque",      40.0),
+            'vibration':            event.get("vibration",   0.03),
+            'delta_temp':           dT,
+            'power_w':              power,
+            'proc_temp_velocity':   event.get("proc_temp",  310.0) - prev_proc_temp,
+            'rpm_velocity':         float(event.get("rpm",  1538))  - prev_rpm,
+            'torque_velocity':      event.get("torque",      40.0)  - prev_torque,
+            'vibration_velocity':   event.get("vibration",   0.03)  - prev_vibration,
+            'load_to_temp_ratio':   ltr,
         }
 
-        if device_id not in DEVICE_BUFFERS:
-            DEVICE_BUFFERS[device_id] = []
-        buf = DEVICE_BUFFERS[device_id]
-        buf.append(sensor_row)
-        if len(buf) > WINDOW:
-            buf.pop(0)
-
-        feats     = _engineer_row(buf, uptime_seconds)
+        buf.push(sensor_row)
+        feats     = buf.build_features(uptime_seconds)
         feat_cols = bundle['feature_cols']
         X         = np.array([[feats.get(c, 0.0) for c in feat_cols]])
 
-        model_type = bundle.get('model_type', 'regressor')
-
-        if model_type == 'classifier':
-            proba          = bundle['model'].predict_proba(X)[0]
-            fail_prob      = float(proba[1])
-            threshold      = bundle.get('threshold', 0.5)
-            is_pre_failure = 1 if fail_prob >= threshold else 0
-            ml_score       = fail_prob
-        else:
-            rul_seconds    = float(max(0.0, bundle['model'].predict(X)[0]))
-            ml_score       = float(np.clip(1.0 - rul_seconds / 1800, 0.05, 0.95))
-            is_pre_failure = 1 if ml_score > 0.6 else 0
-            fail_prob      = ml_score
+        proba          = bundle['model'].predict_proba(X)[0]
+        fail_prob      = float(proba[1])
+        threshold      = bundle.get('threshold', 0.5)
+        is_pre_failure = 1 if fail_prob >= threshold else 0
+        ml_score       = fail_prob
 
         return round(ml_score, 4), failure_type, is_pre_failure, round(fail_prob, 4)
 
@@ -219,7 +295,7 @@ def score_to_severity(score: float) -> str:
     return "OK"
 
 
-# ── SQL statements ────────────────────────────────────────────────────────────
+# ── SQL ───────────────────────────────────────────────────────────────────────
 INSERT_METRIC = """
 INSERT INTO hvac_metrics
   (device_id, ts, server_ts, lat, lng,
@@ -259,6 +335,7 @@ ON CONFLICT (device_id) DO UPDATE SET
 """
 
 
+# ── Postgres helpers ──────────────────────────────────────────────────────────
 def connect_postgres(retries: int = 10):
     for attempt in range(retries):
         try:
@@ -319,9 +396,10 @@ def get_uptime(device_id: str) -> float:
 def reset_uptime(device_id: str):
     DEVICE_UPTIME[device_id] = {'uptime': 0.0, 'last_ts': time.time()}
     if device_id in DEVICE_BUFFERS:
-        DEVICE_BUFFERS[device_id] = []
+        DEVICE_BUFFERS[device_id].reset()
 
 
+# ── Kafka ─────────────────────────────────────────────────────────────────────
 def create_consumer() -> Consumer:
     return Consumer({
         "bootstrap.servers":     KAFKA_BOOTSTRAP,
@@ -353,8 +431,9 @@ def ensure_topics():
                 log.warning("Topic %s: %s", topic, e)
 
 
+# ── Main loop ─────────────────────────────────────────────────────────────────
 def main():
-    log.info("hvac_consumer v2 | kafka=%s model=%s", KAFKA_BOOTSTRAP, MODEL_PATH)
+    log.info("hvac_consumer v3 | kafka=%s model=%s", KAFKA_BOOTSTRAP, MODEL_PATH)
 
     running = True
     def handle_signal(sig, frame):
@@ -383,7 +462,7 @@ def main():
     restore_uptime(conn)
 
     last_retention = time.time()
-    msg_count = 0
+    msg_count      = 0
 
     try:
         while running:
@@ -417,7 +496,7 @@ def main():
                                    last_failure_type, uptime_seconds)
                                 VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), 'OK', 'None', 0)
                                 ON CONFLICT (device_id) DO UPDATE SET
-                                  last_seen='NOW()', last_severity='OK',
+                                  last_seen=NOW(), last_severity='OK',
                                   last_failure_type='None', uptime_seconds=0, online=TRUE
                             """, {"device_id": device_id,
                                   "lat": event.get("lat"),
@@ -427,37 +506,37 @@ def main():
                                  device_id, event.get('resolved_failure'))
 
                     else:
-                        # Użyj uptime z eventu (symulator/twin) lub własnego licznika
+                        # uptime z eventu ma priorytet
                         event_uptime = event.get("uptime_seconds")
                         if event_uptime is not None:
                             uptime = float(event_uptime)
-                            # Zsynchronizuj własny licznik
                             DEVICE_UPTIME[device_id] = {'uptime': uptime, 'last_ts': time.time()}
                         else:
                             uptime = get_uptime(device_id)
+
                         ml_score, failure_type, is_pre_failure, fail_prob = infer(model, event, uptime)
                         severity = score_to_severity(ml_score)
 
                         row = {
-                            "device_id":       device_id,
-                            "ts":              event.get("ts", datetime.now(timezone.utc).isoformat()),
-                            "server_ts":       datetime.fromtimestamp(event["server_ts"], tz=timezone.utc)
-                                               if "server_ts" in event else None,
-                            "lat":             event.get("lat"),
-                            "lng":             event.get("lng"),
-                            "air_temp":        event.get("air_temp"),
-                            "proc_temp":       event.get("proc_temp"),
-                            "rpm":             event.get("rpm"),
-                            "torque":          event.get("torque"),
-                            "vibration":       event.get("vibration"),
-                            "ml_score":        ml_score,
-                            "failure_type":    failure_type,
-                            "severity":        severity,
-                            "app_severity":    event.get("severity", "OK"),
-                            "is_pre_failure":  is_pre_failure,
+                            "device_id":        device_id,
+                            "ts":               event.get("ts", datetime.now(timezone.utc).isoformat()),
+                            "server_ts":        datetime.fromtimestamp(event["server_ts"], tz=timezone.utc)
+                                                if "server_ts" in event else None,
+                            "lat":              event.get("lat"),
+                            "lng":              event.get("lng"),
+                            "air_temp":         event.get("air_temp"),
+                            "proc_temp":        event.get("proc_temp"),
+                            "rpm":              event.get("rpm"),
+                            "torque":           event.get("torque"),
+                            "vibration":        event.get("vibration"),
+                            "ml_score":         ml_score,
+                            "failure_type":     failure_type,
+                            "severity":         severity,
+                            "app_severity":     event.get("severity", "OK"),
+                            "is_pre_failure":   is_pre_failure,
                             "fail_probability": fail_prob,
-                            "uptime_seconds":  round(uptime, 1),
-                            "session_id":      event.get("session_id"),
+                            "uptime_seconds":   round(uptime, 1),
+                            "session_id":       event.get("session_id"),
                         }
 
                         with conn.cursor() as cur:
