@@ -427,7 +427,14 @@ def main():
                                  device_id, event.get('resolved_failure'))
 
                     else:
-                        uptime = get_uptime(device_id)
+                        # Użyj uptime z eventu (symulator/twin) lub własnego licznika
+                        event_uptime = event.get("uptime_seconds")
+                        if event_uptime is not None:
+                            uptime = float(event_uptime)
+                            # Zsynchronizuj własny licznik
+                            DEVICE_UPTIME[device_id] = {'uptime': uptime, 'last_ts': time.time()}
+                        else:
+                            uptime = get_uptime(device_id)
                         ml_score, failure_type, is_pre_failure, fail_prob = infer(model, event, uptime)
                         severity = score_to_severity(ml_score)
 
