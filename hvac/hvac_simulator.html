@@ -195,8 +195,9 @@ function makeDevice(cfg){
     profile: generateProfile(),
     phase:'warmup',
     mode:'NONE',
-    failureTimer:0,    // seconds in failure phase
-    warmupTimer:0,     // seconds in warmup
+    failureTimer:0,
+    warmupTimer:0,
+    uptime:0,          // seconds since last SERVICE
     fails:[],
     score:0.05,
     sent:0,
@@ -265,6 +266,7 @@ function tickDevice(dev, sendInterval){
   dev.state=nx;
   dev.fails=detectFailures(nx);
   dev.score=mlScore(dev.fails,nx);
+  dev.uptime+=TICK;  // licznik sekund od ostatniego SERVICE
 }
 
 function updatePhase(dev, failureDuration, sendInterval){
@@ -301,6 +303,7 @@ function updatePhase(dev, failureDuration, sendInterval){
       dev.phase='warmup';
       dev.mode='NONE';
       dev.warmupTimer=0;
+      dev.uptime=0;    // reset licznika po serwisie
       dev.state=normalState();
       dev.accum={CLOG:0,BEARING:0,PWF:0,HDF:0};
       dev.profile=generateProfile();
@@ -387,6 +390,7 @@ async function simTick(url, failureDuration, sendInterval){
         failure_type:f.length?f.join(','):'None',
         severity:sev(sc),
         event_type:'telemetry',
+        uptime_seconds:Math.round(dev.uptime),
         ts:new Date().toISOString(),
       };
       await sendEvent(url,payload);
@@ -419,7 +423,7 @@ function renderDevices(){
     const statusText=isService?'⟳ SERVICE':isFailure?`⚠ ${dev.fails.join('+')}`:dev.phase==='anomaly'?`▲ ${dev.mode}`:'● OK';
     const statusClass=isService?'service':isFailure?'failure':dev.score>0.4?'warning':'ok';
     return `<div class="device-card ${isFailure?'failure':isService?'service':''}">
-      <div class="device-id">${dev.id} · ${dev.type}</div>
+      <div class="device-id">${dev.id} | ⏱${Math.round(dev.uptime)}s</div>
       <div class="device-status ${statusClass}">${statusText}</div>
       <div class="device-metric">T: ${(dev.state.proc_temp-273.15).toFixed(1)}°C RPM: ${Math.round(dev.state.rpm)}</div>
       <div class="device-metric">Sent: ${dev.sent} events</div>
