@@ -303,7 +303,7 @@ function MonitorScreen({config}){
   // Continuous physical state held in ref — mutated gradually each tick
   const stateRef=useRef(null);
   if(!stateRef.current) stateRef.current=normalState();
-  // Accumulator: how many seconds each anomaly has been active
+  const uptimeRef=useRef(0);  // licznik sekund od ostatniego SERVICE
   const accum=useRef({HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0});
   // Refs so interval closure always sees latest values without re-registering
   const modesRef=useRef(modes);
@@ -315,6 +315,7 @@ function MonitorScreen({config}){
   const reset=useCallback(()=>{
     setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
     stateRef.current=normalState();
+    uptimeRef.current=0;
     accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0};
     setSs({...stateRef.current});
   },[config.type]);
@@ -339,6 +340,7 @@ function MonitorScreen({config}){
     }
     setModes(new Set());setBurn(0);setBurned(false);setScore(0.05);setFails([]);
     stateRef.current=normalState();
+    uptimeRef.current=0;
     accum.current={HEAT:0,CLOG:0,BEARING:0,DRIFT:0,POWER:0};
     setSs({...stateRef.current});
   },[config]);
@@ -419,6 +421,7 @@ function MonitorScreen({config}){
       } else { ac.POWER=Math.max(0,ac.POWER-2); }
 
       stateRef.current=nx;
+      uptimeRef.current+=1;  // +1 sekunda per tick
       const f=detectFailures(nx);
       const sc=mlScore(f,nx);
       setSs({...nx});setFails(f);setScore(sc);
@@ -457,6 +460,7 @@ function MonitorScreen({config}){
           failure_type:lastF.length?lastF.join(','):'None',
           severity:sev(lastSc),
           event_type:'telemetry',
+          uptime_seconds:uptimeRef.current,
           ts:new Date().toISOString(),
           // Profil urządzenia — dla generatora danych treningowych
           device_profile:{
