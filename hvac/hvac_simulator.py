@@ -1,7 +1,7 @@
 """
 hvac_simulator.py
 =================
-Symulator 250 urządzeń HVAC (175 anomaly + 75 normalOnly) — działa na VM bez przeglądarki. wersja z 16.05
+Symulator 280 urządzeń HVAC (196 anomaly + 84 normalOnly) — działa na VM bez przeglądarki.
 Identyczna fizyka jak hvac_simulator_25.html.
 
 Uruchomienie:
@@ -59,13 +59,13 @@ FAILURE_THRESHOLDS = {
 MODES        = ['HDF', 'PWF', 'CLOG', 'BEARING']
 MODE_WEIGHTS = [0.30,  0.30,  0.25,   0.15]
 
-# Urządzenia: SIM_001-175 anomaly, SIM_176-250 normalOnly
+# Urządzenia: SIM_01-15 anomaly, SIM_16-25 normalOnly
 DEVICES = [
-    {'id': f'SIM_{i:03d}',
+    {'id': f'SIM_{i:02d}',
      'lat': round(50.0521 + (i-1)*0.007 + random.uniform(-0.003, 0.003), 4),
      'lng': round(19.9345 + (i-1)*0.005 + random.uniform(-0.003, 0.003), 4),
-     'normal_only': i > 175}
-    for i in range(1, 251)
+     'normal_only': i > 196}
+    for i in range(1, 281)
 ]
 
 
@@ -307,7 +307,7 @@ def send_event(payload: dict, timeout: float = 3.0) -> bool:
         r = requests.post(f"{SERVER_URL}/event",
                           json=payload,
                           timeout=timeout)
-        return r.status_code == 200
+        return r.status_code in (200, 201, 202)
     except Exception:
         return False
 
