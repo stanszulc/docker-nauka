@@ -1,360 +1,79 @@
-"""
-hvac_simulator.py
-=================
-Symulator 280 urządzeń HVAC (196 anomaly + 84 normalOnly) — działa na VM bez przeglądarki.
-Identyczna fizyka jak hvac_simulator_25.html.
-
-Uruchomienie:
-    python3 hvac_simulator.py
-
-Zatrzymanie:
-    Ctrl+C lub kill PID
-"""
-
-import os
-import json
-import math
 import time
-import uuid
+import json
 import random
-import logging
-import signal
-import sys
-from datetime import datetime, timezone
-
+import uuid
 import requests
 import numpy as np
+from datetime import datetime, timezone
 
-# ── Config ────────────────────────────────────────────────────────────────────
-SERVER_URL   = os.getenv("SERVER_URL",   "http://localhost:8002")
-TICK         = 10       # sekund per krok
-SEND_EVERY   = 1        # wysyłaj co N ticków
-LOG_LEVEL    = os.getenv("LOG_LEVEL", "INFO")
+# ── KONFIGURACJA ─────────────────────────────────────────────────────────────
+# Jeśli symulator będzie w Dockerze, użyj nazwy kontenera: http://hvac-stream:8002
+# Jeśli odpalasz go ręcznie na tej samej maszynie co Docker: http://localhost:8002
+SERVER_URL = "http://localhost:8002/events/batch"
+NUM_DEVICES = 1000
+BATCH_SIZE = 100  # Wielkość paczki wysyłanej do API
+INTERVAL = 10     # Co ile sekund każde urządzenie generuje odczyt
 
-logging.basicConfig(
-    level=getattr(logging, LOG_LEVEL),
-    format="%(asctime)s [hvac_sim] %(levelname)s %(message)s",
-    datefmt="%H:%M:%S",
-)
-log = logging.getLogger(__name__)
+print(f"🚀 Start symulatora: {NUM_DEVICES} urządzeń, paczki po {BATCH_SIZE}")
 
-# ── Zakresy sensorów (identyczne z generatorem) ───────────────────────────────
-R = {
-    'air_temp':  {'min': 295.3, 'max': 304.5, 'mean': 300.0, 'std': 2.0},
-    'proc_temp': {'min': 305.7, 'max': 313.8, 'mean': 310.0, 'std': 1.48},
-    'rpm':       {'min': 1168,  'max': 2886,  'mean': 1538,  'std': 179},
-    'torque':    {'min': 3.8,   'max': 76.6,  'mean': 40.0,  'std': 9.97},
-    'vibration': {'min': 0.01,  'max': 2.0,   'mean': 0.04,  'std': 0.02},
-}
+# Inicjalizacja urządzeń (pozycja i ID)
+devices = []
+for i in range(NUM_DEVICES):
+    devices.append({
+        "id": f"HVAC-{1000 + i}",
+        "lat": 50.06 + random.uniform(-0.05, 0.05),
+        "lng": 19.94 + random.uniform(-0.05, 0.05),
+        "session_id": str(uuid.uuid4())
+    })
 
-# Progi awarii
-FAILURE_THRESHOLDS = {
-    'HDF':     lambda s: (s['proc_temp'] - s['air_temp']) < 8.6 and s['rpm'] < 1380,
-    'PWF':     lambda s: (s['torque'] * (s['rpm'] * 2 * math.pi / 60)) < 3500 or
-                         (s['torque'] * (s['rpm'] * 2 * math.pi / 60)) > 9000,
-    'CLOG':    lambda s: s['torque'] > 60 or (s['proc_temp'] - s['air_temp']) > 13.5,
-    'BEARING': lambda s: s['vibration'] > 0.8,
-}
-
-MODES        = ['HDF', 'PWF', 'CLOG', 'BEARING']
-MODE_WEIGHTS = [0.30,  0.30,  0.25,   0.15]
-
-# Urządzenia: SIM_01-15 anomaly, SIM_16-25 normalOnly
-DEVICES = [
-    {'id': f'SIM_{i:02d}',
-     'lat': round(50.0521 + (i-1)*0.007 + random.uniform(-0.003, 0.003), 4),
-     'lng': round(19.9345 + (i-1)*0.005 + random.uniform(-0.003, 0.003), 4),
-     'normal_only': i > 196}
-    for i in range(1, 281)
-]
-
-
-def clamp(v, a, b):
-    return max(a, min(b, v))
-
-
-def gauss(mean, std, lo, hi):
-    return clamp(mean + random.gauss(0, 1) * std, lo, hi)
-
-
-def normal_state():
+def generate_telemetry(device):
+    """Generuje realistyczne dane HVAC zgodne ze schematem API."""
+    # Symulujemy lekkie przegrzewanie się niektórych jednostek
+    base_air = 298.0 + random.uniform(-2, 2)
+    proc_temp = base_air + 10.0 + random.uniform(0, 5)
+    
+    # Szansa na awarię (ml_score)
+    ml_score = random.random() if random.random() > 0.98 else random.uniform(0, 0.3)
+    
     return {
-        'air_temp':  gauss(R['air_temp']['mean'],  R['air_temp']['std'],  R['air_temp']['min'],  R['air_temp']['max']),
-        'proc_temp': gauss(R['proc_temp']['mean'], R['proc_temp']['std'], R['proc_temp']['min'], R['proc_temp']['max']),
-        'rpm':       gauss(R['rpm']['mean'],        R['rpm']['std'],        R['rpm']['min'],        R['rpm']['max']),
-        'torque':    gauss(R['torque']['mean'],     R['torque']['std'],     R['torque']['min'],     R['torque']['max']),
-        'vibration': gauss(R['vibration']['mean'],  R['vibration']['std'],  R['vibration']['min'],  R['vibration']['max']),
+        "device_id": device["id"],
+        "lat": device["lat"],
+        "lng": device["lng"],
+        "air_temp": round(base_air, 1),
+        "proc_temp": round(proc_temp, 1),
+        "rpm": random.randint(1200, 2800),
+        "torque": round(random.uniform(10, 50), 1),
+        "vibration": round(random.uniform(0.01, 0.1), 3),
+        "ml_score": round(ml_score, 2),
+        "failure_type": "None" if ml_score < 0.5 else random.choice(["HDF", "PWF", "CLOG"]),
+        "severity": "OK" if ml_score < 0.4 else ("WARNING" if ml_score < 0.7 else "CRITICAL"),
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "event_type": "telemetry",
+        "session_id": device["session_id"]
     }
 
-
-def generate_profile():
-    def rv(nominal, std):
-        return clamp(nominal * (1 + random.gauss(0, 1) * std), nominal * 0.4, nominal * 2.2)
-    return {
-        'heatRate':    rv(0.012, 0.30),
-        'heatDecay':   rv(120,   0.25),
-        'heatRpmDrop': rv(0.079, 0.35),
-        'clogTorque':  rv(0.004, 0.30),
-        'clogTemp':    rv(0.001, 0.30),
-        'clogRpm':     rv(0.10,  0.35),
-        'bearingAmp':  rv(0.008, 0.35),
-        'bearingMax':  rv(1.8,   0.20),
-        'driftAir':    rv(0.020, 0.30),
-        'driftProc':   rv(0.022, 0.30),
-        'powerDrop':   rv(0.185, 0.30),
-        'powerDecay':  rv(25,    0.25),
-    }
-
-
-def detect_failures(s):
-    return [f for f, check in FAILURE_THRESHOLDS.items() if check(s)]
-
-
-def tick_state(state, accum, mode, profile, base_rpm=None):
-    """Jeden krok symulacji — identyczna fizyka jak HTML."""
-    s  = dict(state)
-    pr = profile
-    N  = 0.03
-    sc = math.sqrt(TICK)
-
-    # Szum sensorów
-    s['air_temp']  = clamp(s['air_temp']  + random.gauss(0,1) * N * R['air_temp']['std']  * sc, R['air_temp']['min'],  R['air_temp']['max'])
-    s['proc_temp'] = clamp(s['proc_temp'] + random.gauss(0,1) * N * R['proc_temp']['std'] * sc, R['proc_temp']['min'], R['proc_temp']['max'])
-    s['torque']    = clamp(s['torque']    + random.gauss(0,1) * N * R['torque']['std']    * sc, R['torque']['min'],    R['torque']['max'])
-    s['vibration'] = clamp(s['vibration'] + random.gauss(0,1) * N * 0.01                 * sc, R['vibration']['min'], R['vibration']['max'])
-    s['rpm']       = clamp(s['rpm']       + random.gauss(0,1) * N * R['rpm']['std'],            R['rpm']['min'],       R['rpm']['max'])
-
-    # Mean-reversion
-    MR = 0.025 * TICK
-    if mode not in ('HDF', 'CLOG'):
-        s['proc_temp'] = clamp(s['proc_temp'] + (R['proc_temp']['mean'] - s['proc_temp']) * MR, R['proc_temp']['min'], R['proc_temp']['max'])
-    if mode != 'CLOG':
-        s['torque']    = clamp(s['torque']    + (R['torque']['mean']    - s['torque'])    * MR, R['torque']['min'],    R['torque']['max'])
-    if mode != 'BEARING':
-        s['vibration'] = clamp(s['vibration'] + (0.03 - s['vibration']) * 0.08 * TICK,    R['vibration']['min'], 0.07)
-    s['air_temp'] = clamp(s['air_temp'] + (R['air_temp']['mean'] - s['air_temp']) * MR, R['air_temp']['min'], R['air_temp']['max'])
-
-    # Anomalie
-    if mode == 'HDF':
-        accum['HDF'] = accum.get('HDF', 0) + 1
-        ac    = accum['HDF']
-        accel = 1 + (ac / 20) ** 1.5
-        s['rpm'] = clamp(s['rpm'] - pr['heatRpmDrop'] * TICK * accel, R['rpm']['min'], R['rpm']['max'])
-        target = s['air_temp'] + 7.5
-        s['proc_temp'] = clamp(s['proc_temp'] + (target - s['proc_temp']) * pr['heatRate'], R['proc_temp']['min'], R['proc_temp']['max'])
-
-    elif mode == 'PWF':
-        accum['PWF'] = accum.get('PWF', 0) + 1
-        ac    = accum['PWF']
-        accel = 1 + (ac / 25) ** 1.5
-        # undervolt
-        s['rpm']    = clamp(s['rpm']    - pr['powerDrop']  * TICK * accel, R['rpm']['min'],    R['rpm']['max'])
-        s['torque'] = clamp(s['torque'] - pr['powerDrop'] * 0.08 * TICK * accel, R['torque']['min'], R['torque']['max'])
-
-    elif mode == 'CLOG':
-        accum['CLOG'] = accum.get('CLOG', 0) + 1
-        ac    = accum['CLOG']
-        accel = 1 + (ac / 30) ** 2
-        s['torque']    = clamp(s['torque']    + pr['clogTorque'] * TICK * accel, R['torque']['min'],    R['torque']['max'])
-        s['rpm']       = clamp(s['rpm']       - pr['clogRpm']    * TICK * accel, R['rpm']['min'],       R['rpm']['max'])
-        s['proc_temp'] = clamp(s['proc_temp'] + pr['clogTemp']   * TICK * accel, R['proc_temp']['min'], R['proc_temp']['max'])
-
-    elif mode == 'BEARING':
-        accum['BEARING'] = accum.get('BEARING', 0) + 1
-        ac  = accum['BEARING']
-        amp = clamp(0.04 + ac * pr['bearingAmp'], 0.04, pr['bearingMax'])
-        s['vibration'] = clamp(amp * (0.7 + 0.3 * math.sin(ac * 0.9)) + abs(random.gauss(0,1) * 0.015), 0.01, 2.0)
-        s['torque']    = clamp(s['torque'] + 0.05 * ac, R['torque']['min'], R['torque']['max'])
-
-    return s
-
-
-class DeviceSimulator:
-    """Stan jednego urządzenia HVAC."""
-
-    def __init__(self, device_cfg):
-        self.id          = device_cfg['id']
-        self.lat         = device_cfg['lat']
-        self.lng         = device_cfg['lng']
-        self.normal_only = device_cfg['normal_only']
-
-        self.session_id  = str(uuid.uuid4())
-        self.profile     = generate_profile()
-        self.state       = normal_state()
-        self.accum       = {}
-
-        self.uptime      = 0
-        self.phase       = 'warmup'   # warmup | anomaly | failure | service
-        self.mode        = None
-        self.warmup_left = random.randint(70, 130) * TICK  # 700-1300s
-
-        # Pseudo-anomalia dla normalOnly
-        self.pseudo_active   = False
-        self.pseudo_type     = None
-        self.pseudo_duration = 0
-        self.pseudo_timer    = 0
-
-    def step(self):
-        """Jeden tick — zwraca dict z danymi do wysłania."""
-        prev = dict(self.state)
-
-        if self.phase == 'warmup':
-            self.state = tick_state(self.state, self.accum, 'NONE', self.profile)
-            self.warmup_left -= TICK
-            if self.warmup_left <= 0:
-                if self.normal_only:
-                    self.phase = 'normal_long'
+def run_simulation():
+    while True:
+        start_time = time.time()
+        all_events = [generate_telemetry(d) for d in devices]
+        
+        # Dzielimy 1000 eventów na paczki po 100
+        for i in range(0, len(all_events), BATCH_SIZE):
+            batch = all_events[i : i + BATCH_SIZE]
+            try:
+                response = requests.post(SERVER_URL, json=batch, timeout=5)
+                if response.status_code == 202:
+                    print(f"✅ Wysłano paczkę {i//BATCH_SIZE + 1} ({len(batch)} urządzeń)")
                 else:
-                    self.phase  = 'anomaly'
-                    self.mode   = random.choices(MODES, weights=MODE_WEIGHTS)[0]
-                    log.info("Device %s → anomaly mode %s", self.id, self.mode)
+                    print(f"❌ Błąd API: {response.status_code} - {response.text}")
+            except Exception as e:
+                print(f"⚠️ Serwer nie odpowiada: {e}")
+        
+        # Czekamy do pełnego interwału
+        elapsed = time.time() - start_time
+        wait_time = max(0, INTERVAL - elapsed)
+        print(f"😴 Koniec cyklu. Czekam {wait_time:.1f}s...")
+        time.sleep(wait_time)
 
-        elif self.phase == 'anomaly':
-            self.state = tick_state(self.state, self.accum, self.mode, self.profile)
-            fails = detect_failures(self.state)
-            if fails:
-                self.phase = 'failure'
-                log.warning("Device %s → FAILURE %s", self.id, fails)
-
-        elif self.phase == 'failure':
-            self.state = tick_state(self.state, self.accum, self.mode, self.profile)
-            # Po 30s awarii — wyślij SERVICE i reset
-            if self.accum.get(self.mode, 0) > 3:
-                self._service()
-
-        elif self.phase == 'normal_long':
-            self.state = tick_state(self.state, self.accum, 'NONE', self.profile)
-            # Pseudo-anomalia
-            self.pseudo_timer += TICK
-            if not self.pseudo_active and self.pseudo_timer > 60 + random.random() * 120:
-                self.pseudo_active   = True
-                self.pseudo_duration = random.randint(10, 30)
-                self.pseudo_timer    = 0
-                self.pseudo_type     = random.choice(['torque_spike', 'rpm_drop', 'vibration_bump'])
-
-            if self.pseudo_active:
-                if self.pseudo_type == 'torque_spike':
-                    self.state['torque'] = min(self.state['torque'] + 0.1, 46.0)
-                elif self.pseudo_type == 'rpm_drop':
-                    self.state['rpm'] = max(self.state['rpm'] - 1, 1500.0)
-                elif self.pseudo_type == 'vibration_bump':
-                    self.state['vibration'] = min(self.state['vibration'] + 0.002, 0.30)
-                self.pseudo_duration -= TICK
-                if self.pseudo_duration <= 0:
-                    self.pseudo_active = False
-
-        self.uptime += TICK
-
-        # Oblicz pochodne
-        fails  = detect_failures(self.state)
-        dT     = self.state['proc_temp'] - self.state['air_temp']
-        power  = self.state['torque'] * (self.state['rpm'] * 2 * math.pi / 60)
-
-        return {
-            'device_id':     self.id,
-            'session_id':    self.session_id,
-            'lat':           self.lat,
-            'lng':           self.lng,
-            'air_temp':      round(self.state['air_temp'],   2),
-            'proc_temp':     round(self.state['proc_temp'],  2),
-            'rpm':           int(self.state['rpm']),
-            'torque':        round(self.state['torque'],     2),
-            'vibration':     round(self.state['vibration'],  3),
-            'delta_temp':    round(dT,    2),
-            'power_w':       round(power, 1),
-            'ml_score':      0.0,
-            'failure_type':  ','.join(fails) if fails else 'None',
-            'severity':      'CRITICAL' if fails else 'OK',
-            'event_type':    'telemetry',
-            'uptime_seconds': self.uptime,
-            'ts':            datetime.now(timezone.utc).isoformat(),
-        }
-
-    def _service(self):
-        """Reset po awarii."""
-        log.info("Device %s → SERVICE resolved=%s", self.id, self.mode)
-        self.session_id  = str(uuid.uuid4())
-        self.profile     = generate_profile()
-        self.state       = normal_state()
-        self.accum       = {}
-        self.uptime      = 0
-        self.phase       = 'warmup'
-        self.warmup_left = random.randint(70, 130) * TICK
-        self.mode        = None
-
-    def service_payload(self):
-        return {
-            'device_id':        self.id,
-            'lat':              self.lat,
-            'lng':              self.lng,
-            'air_temp':         round(self.state['air_temp'], 2),
-            'proc_temp':        round(self.state['proc_temp'], 2),
-            'rpm':              int(self.state['rpm']),
-            'torque':           round(self.state['torque'], 2),
-            'vibration':        round(self.state['vibration'], 3),
-            'ml_score':         0.0,
-            'failure_type':     'None',
-            'severity':         'OK',
-            'event_type':       'service',
-            'resolved_failure': self.mode or 'RESET',
-            'uptime_seconds':   0,
-            'ts':               datetime.now(timezone.utc).isoformat(),
-        }
-
-
-def send_event(payload: dict, timeout: float = 3.0) -> bool:
-    try:
-        r = requests.post(f"{SERVER_URL}/event",
-                          json=payload,
-                          timeout=timeout)
-        return r.status_code in (200, 201, 202)
-    except Exception:
-        return False
-
-
-def main():
-    log.info("HVAC Simulator | %d devices | server=%s | tick=%ds",
-             len(DEVICES), SERVER_URL, TICK)
-
-    devices = [DeviceSimulator(d) for d in DEVICES]
-
-    running = True
-    def handle_signal(sig, frame):
-        nonlocal running
-        log.info("Shutdown signal received")
-        running = False
-    signal.signal(signal.SIGTERM, handle_signal)
-    signal.signal(signal.SIGINT,  handle_signal)
-
-    tick_count = 0
-    sent_ok    = 0
-    sent_err   = 0
-
-    while running:
-        start = time.time()
-        tick_count += 1
-
-        for dev in devices:
-            payload = dev.step()
-            ok = send_event(payload)
-            if ok:
-                sent_ok += 1
-            else:
-                sent_err += 1
-
-        if tick_count % 10 == 0:
-            anomaly_devs = [d.id for d in devices if d.phase in ('anomaly', 'failure')]
-            log.info("Tick %d | sent ok=%d err=%d | anomaly=%s",
-                     tick_count, sent_ok, sent_err,
-                     ','.join(anomaly_devs) if anomaly_devs else 'none')
-
-        # Czekaj do następnego ticku
-        elapsed = time.time() - start
-        sleep_t = max(0, TICK - elapsed)
-        time.sleep(sleep_t)
-
-    log.info("Simulator stopped after %d ticks", tick_count)
-
-
-if __name__ == '__main__':
-    main()
+if __name__ == "__main__":
+    run_simulation()
