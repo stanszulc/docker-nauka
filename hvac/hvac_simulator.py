@@ -1,8 +1,10 @@
 """
 hvac_simulator.py
 =================
-Python symulator 25 urządzeń HVAC — działa na VM bez przeglądarki.
+Python symulator 250 urządzeń HVAC — działa na VM bez przeglądarki.
 Identyczna fizyka jak hvac_simulator_25.html.
+250 urządzeń: 175 anomaly (SIM_001-175) + 75 normalOnly (SIM_176-250)
+Warmup: 700-1300s per urządzenie przed rozpoczęciem anomalii.
 
 Uruchomienie:
     python hvac_simulator.py --url http://92.5.14.76:8002 --interval 10
