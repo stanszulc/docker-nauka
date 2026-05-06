@@ -1,11 +1,10 @@
 """
-hvac_consumer v4 — BATCH ML Consumer
-Zmiany vs v3:
-- Batch INSERT z execute_values (100 wierszy naraz) — znacznie szybszy
-- Nowa grupa Kafka: hvac_ml_group_v4 (czyste offsety)
-- BATCH_SIZE=100, BATCH_TIMEOUT=5s
-- Cała logika ML (DeviceBuffer, infer) bez zmian vs v3
-- Kompatybilny z hvac_classifier_v5.pkl (93 features)
+hvac_consumer v4s — Single-event ML Consumer (bez batchowania)
+Zmiany vs v4:
+- Pojedynczy INSERT per event (bez batch bufora)
+- Uproszczona pętla główna
+- Cały kod ML (DeviceBuffer, 93 features, infer) bez zmian
+- Kompatybilny z hvac_classifier_v5.pkl
 """
 
 import os
@@ -19,7 +18,6 @@ from datetime import datetime, timezone
 import joblib
 import numpy as np
 import psycopg2
-from psycopg2.extras import execute_values
 from confluent_kafka import Consumer, KafkaError
 from confluent_kafka.admin import AdminClient, NewTopic
 
@@ -28,14 +26,12 @@ KAFKA_BOOTSTRAP  = os.getenv("KAFKA_BOOTSTRAP",  "kafka:9092")
 TOPIC_TELEMETRY  = os.getenv("TOPIC_TELEMETRY",  "hvac_telemetry")
 TOPIC_ALERTS     = os.getenv("TOPIC_ALERTS",     "hvac_alerts")
 TOPIC_STATUS     = os.getenv("TOPIC_STATUS",     "hvac_status")
-CONSUMER_GROUP   = os.getenv("CONSUMER_GROUP",   "hvac_ml_group_v4")  # nowa grupa
+CONSUMER_GROUP   = os.getenv("CONSUMER_GROUP",   "hvac_ml_group")
 POSTGRES_DSN     = os.getenv("POSTGRES_DSN",     "postgresql://kafka:kafka@postgres:5432/events")
 MODEL_PATH       = os.getenv("MODEL_PATH",       "/app/model/hvac_rf_model.pkl")
 ALERT_THRESHOLD  = float(os.getenv("ALERT_THRESHOLD",  "0.5"))
 RETENTION_HOURS  = int(os.getenv("RETENTION_HOURS",    "168"))
 LOG_LEVEL        = os.getenv("LOG_LEVEL",        "INFO")
-BATCH_SIZE       = int(os.getenv("BATCH_SIZE",   "100"))
-BATCH_TIMEOUT    = float(os.getenv("BATCH_TIMEOUT", "5.0"))
 
 logging.basicConfig(
     level=getattr(logging, LOG_LEVEL),
@@ -114,9 +110,9 @@ ALTER TABLE hvac_device_status ADD COLUMN IF NOT EXISTS uptime_seconds REAL DEFA
 CREATE INDEX IF NOT EXISTS idx_hvac_metrics_device_ts ON hvac_metrics (device_id, ts DESC);
 CREATE INDEX IF NOT EXISTS idx_hvac_metrics_ts        ON hvac_metrics (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_hvac_alerts_ts         ON hvac_alerts_log (ts DESC);
+CREATE INDEX IF NOT EXISTS idx_hvac_alerts_device     ON hvac_alerts_log (device_id);
+CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type ON hvac_alerts_log (event_type);
 """
-
-RETENTION_SQL = "DELETE FROM hvac_metrics WHERE ts < NOW() - INTERVAL '{hours} hours';"
 
 # ── Per-device rolling buffer ─────────────────────────────────────────────────
 class DeviceBuffer:
@@ -264,7 +260,7 @@ def score_to_severity(score: float) -> str:
     return "OK"
 
 
-# ── Postgres helpers ──────────────────────────────────────────────────────────
+# ── Postgres ──────────────────────────────────────────────────────────────────
 def connect_postgres(retries: int = 10):
     for attempt in range(retries):
         try:
@@ -285,31 +281,6 @@ def ensure_schema(conn):
     log.info("Schema ready")
 
 
-def run_retention(conn):
-    with conn.cursor() as cur:
-        cur.execute(RETENTION_SQL.format(hours=RETENTION_HOURS))
-    conn.commit()
-
-
-def restore_uptime(conn):
-    try:
-        with conn.cursor() as cur:
-            cur.execute("""
-                SELECT DISTINCT ON (device_id) device_id, uptime_seconds, ts
-                FROM hvac_metrics WHERE uptime_seconds IS NOT NULL
-                ORDER BY device_id, ts DESC
-            """)
-            for row in cur.fetchall():
-                dev_id, last_uptime, last_ts = row
-                if last_uptime is not None:
-                    DEVICE_UPTIME[dev_id] = {
-                        'uptime': float(last_uptime),
-                        'last_ts': last_ts.timestamp()
-                    }
-    except Exception as e:
-        log.warning("Could not restore uptime: %s", e)
-
-
 def get_uptime(device_id: str) -> float:
     now_ts = time.time()
     if device_id not in DEVICE_UPTIME:
@@ -327,49 +298,58 @@ def reset_uptime(device_id: str):
         DEVICE_BUFFERS[device_id].reset()
 
 
-# ── Batch flush ───────────────────────────────────────────────────────────────
-def flush_batch(conn, metrics_batch: list, status_map: dict, alerts_batch: list):
-    if not metrics_batch:
-        return
+def save_event(conn, event: dict, ml_score, failure_type, is_pre_failure, fail_prob, uptime, severity):
+    device_id = event.get("device_id", "unknown")
+    ts_val    = event.get("ts", datetime.now(timezone.utc).isoformat())
     try:
         with conn.cursor() as cur:
-            # Batch INSERT metryk
-            execute_values(cur, """
+            cur.execute("""
                 INSERT INTO hvac_metrics
-                  (device_id, ts, server_ts, lat, lng,
+                  (device_id, ts, lat, lng,
                    air_temp, proc_temp, rpm, torque, vibration,
                    ml_score, failure_type, severity, app_severity,
                    is_pre_failure, fail_probability, uptime_seconds, session_id)
-                VALUES %s
-            """, metrics_batch)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            """, (
+                device_id, ts_val,
+                event.get("lat"), event.get("lng"),
+                event.get("air_temp"), event.get("proc_temp"),
+                event.get("rpm"), event.get("torque"), event.get("vibration"),
+                ml_score, failure_type, severity,
+                event.get("severity", "OK"),
+                is_pre_failure, fail_prob,
+                round(uptime, 1), event.get("session_id"),
+            ))
 
-            # Status update per urządzenie
-            for dev_id, stat in status_map.items():
+            cur.execute("""
+                INSERT INTO hvac_device_status
+                  (device_id, lat, lng, last_seen, last_severity, last_failure_type, uptime_seconds)
+                VALUES (%s,%s,%s,NOW(),%s,%s,%s)
+                ON CONFLICT (device_id) DO UPDATE SET
+                  lat=EXCLUDED.lat, lng=EXCLUDED.lng, last_seen=NOW(),
+                  last_severity=EXCLUDED.last_severity,
+                  last_failure_type=EXCLUDED.last_failure_type,
+                  uptime_seconds=EXCLUDED.uptime_seconds, online=TRUE
+            """, (device_id, event.get("lat"), event.get("lng"),
+                  severity, failure_type, round(uptime, 1)))
+
+            if is_pre_failure or ml_score >= ALERT_THRESHOLD:
                 cur.execute("""
-                    INSERT INTO hvac_device_status
-                      (device_id, lat, lng, last_seen, last_severity, last_failure_type, uptime_seconds)
-                    VALUES (%(d)s, %(lat)s, %(lng)s, NOW(), %(sev)s, %(fail)s, %(upt)s)
-                    ON CONFLICT (device_id) DO UPDATE SET
-                      lat=EXCLUDED.lat, lng=EXCLUDED.lng, last_seen=NOW(),
-                      last_severity=EXCLUDED.last_severity,
-                      last_failure_type=EXCLUDED.last_failure_type,
-                      uptime_seconds=EXCLUDED.uptime_seconds, online=TRUE
-                """, {'d': dev_id, 'lat': stat['lat'], 'lng': stat['lng'],
-                      'sev': stat['sev'], 'fail': stat['fail'], 'upt': stat['upt']})
-
-            # Alerty
-            if alerts_batch:
-                execute_values(cur, """
                     INSERT INTO hvac_alerts_log
                       (device_id, ts, lat, lng, ml_score, failure_type,
-                       severity, event_type, resolved_failure, raw_event)
-                    VALUES %s
-                """, alerts_batch)
+                       severity, event_type, raw_event)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                """, (
+                    device_id, ts_val,
+                    event.get("lat"), event.get("lng"),
+                    ml_score, failure_type, severity,
+                    event.get("event_type", "telemetry"),
+                    json.dumps(event),
+                ))
 
         conn.commit()
-        log.info("💾 Batch saved: %d rows | alerts: %d", len(metrics_batch), len(alerts_batch))
     except Exception as e:
-        log.error("❌ Batch DB error: %s", e)
+        log.error("DB error: %s", e)
         try:
             conn.rollback()
         except Exception:
@@ -382,36 +362,31 @@ def create_consumer() -> Consumer:
         "bootstrap.servers":     KAFKA_BOOTSTRAP,
         "group.id":              CONSUMER_GROUP,
         "auto.offset.reset":     "latest",
-        "enable.auto.commit":    False,
-        "session.timeout.ms":    60000,
-        "heartbeat.interval.ms": 20000,
-        "max.poll.interval.ms":  300000,
+        "enable.auto.commit":    True,
+        "auto.commit.interval.ms": 5000,
+        "session.timeout.ms":    30000,
+        "heartbeat.interval.ms": 10000,
     })
 
 
 def ensure_topics():
     admin = AdminClient({"bootstrap.servers": KAFKA_BOOTSTRAP})
     topics = [
-        NewTopic(TOPIC_TELEMETRY, num_partitions=3, replication_factor=1,
-                 config={"retention.ms": "3600000", "retention.bytes": "104857600"}),
-        NewTopic(TOPIC_ALERTS,    num_partitions=1, replication_factor=1,
-                 config={"retention.ms": "604800000", "retention.bytes": "10485760"}),
-        NewTopic(TOPIC_STATUS,    num_partitions=1, replication_factor=1,
-                 config={"retention.ms": "3600000", "retention.bytes": "10485760"}),
+        NewTopic(TOPIC_TELEMETRY, num_partitions=1, replication_factor=1),
+        NewTopic(TOPIC_ALERTS,    num_partitions=1, replication_factor=1),
+        NewTopic(TOPIC_STATUS,    num_partitions=1, replication_factor=1),
     ]
     futures = admin.create_topics(topics)
     for topic, future in futures.items():
         try:
             future.result()
         except Exception as e:
-            if "TopicExistsException" not in str(type(e)):
-                log.warning("Topic %s: %s", topic, e)
+            log.warning("Topic %s: %s", topic, e)
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    log.info("hvac_consumer v4 BATCH | kafka=%s group=%s batch=%d timeout=%.1fs",
-             KAFKA_BOOTSTRAP, CONSUMER_GROUP, BATCH_SIZE, BATCH_TIMEOUT)
+    log.info("hvac_consumer v4s SINGLE | kafka=%s group=%s", KAFKA_BOOTSTRAP, CONSUMER_GROUP)
 
     running = True
     def handle_signal(sig, frame):
@@ -437,29 +412,12 @@ def main():
     consumer.subscribe([TOPIC_TELEMETRY, TOPIC_STATUS])
     log.info("Subscribed | topics: %s, %s", TOPIC_TELEMETRY, TOPIC_STATUS)
 
-    restore_uptime(conn)
-
-    # Batch bufory
-    metrics_batch = []
-    status_map    = {}
-    alerts_batch  = []
-    last_flush    = time.time()
+    msg_count      = 0
     last_retention = time.time()
-    msg_count     = 0
 
     try:
         while running:
-            # Flush jeśli batch pełny lub timeout
-            now = time.time()
-            if metrics_batch and (len(metrics_batch) >= BATCH_SIZE or now - last_flush >= BATCH_TIMEOUT):
-                flush_batch(conn, metrics_batch, status_map, alerts_batch)
-                consumer.commit()
-                metrics_batch = []
-                status_map    = {}
-                alerts_batch  = []
-                last_flush    = now
-
-            msg = consumer.poll(timeout=0.5)
+            msg = consumer.poll(timeout=1.0)
             if msg is None:
                 continue
             if msg.error():
@@ -475,37 +433,25 @@ def main():
                 continue
 
             try:
+                device_id  = event.get("device_id", "unknown")
+                event_type = event.get("event_type", "telemetry")
+
                 if topic == TOPIC_TELEMETRY:
-                    event_type = event.get("event_type", "telemetry")
-                    device_id  = event.get("device_id", "unknown")
-
                     if event_type == "service":
-                        # Flush przed SERVICE żeby nie mieszać
-                        if metrics_batch:
-                            flush_batch(conn, metrics_batch, status_map, alerts_batch)
-                            consumer.commit()
-                            metrics_batch = []
-                            status_map    = {}
-                            alerts_batch  = []
-                            last_flush    = time.time()
-
                         reset_uptime(device_id)
                         with conn.cursor() as cur:
                             cur.execute("""
                                 INSERT INTO hvac_device_status
                                   (device_id, lat, lng, last_seen, last_severity,
                                    last_failure_type, uptime_seconds)
-                                VALUES (%(device_id)s, %(lat)s, %(lng)s, NOW(), 'OK', 'None', 0)
+                                VALUES (%s,%s,%s,NOW(),'OK','None',0)
                                 ON CONFLICT (device_id) DO UPDATE SET
                                   last_seen=NOW(), last_severity='OK',
                                   last_failure_type='None', uptime_seconds=0, online=TRUE
-                            """, {"device_id": device_id,
-                                  "lat": event.get("lat"),
-                                  "lng": event.get("lng")})
+                            """, (device_id, event.get("lat"), event.get("lng")))
                         conn.commit()
                         log.info("SERVICE | device=%s resolved=%s",
                                  device_id, event.get('resolved_failure'))
-
                     else:
                         event_uptime = event.get("uptime_seconds")
                         if event_uptime is not None:
@@ -517,47 +463,16 @@ def main():
                         ml_score, failure_type, is_pre_failure, fail_prob = infer(model, event, uptime)
                         severity = score_to_severity(ml_score)
 
-                        ts_val = event.get("ts", datetime.now(timezone.utc).isoformat())
-                        server_ts = datetime.fromtimestamp(event["server_ts"], tz=timezone.utc) \
-                                    if "server_ts" in event else None
+                        save_event(conn, event, ml_score, failure_type,
+                                   is_pre_failure, fail_prob, uptime, severity)
 
-                        metrics_batch.append((
-                            device_id, ts_val, server_ts,
-                            event.get("lat"), event.get("lng"),
-                            event.get("air_temp"), event.get("proc_temp"),
-                            event.get("rpm"), event.get("torque"), event.get("vibration"),
-                            ml_score, failure_type, severity,
-                            event.get("severity", "OK"),
-                            is_pre_failure, fail_prob,
-                            round(uptime, 1), event.get("session_id"),
-                        ))
-
-                        status_map[device_id] = {
-                            'lat': event.get("lat"), 'lng': event.get("lng"),
-                            'sev': severity, 'fail': failure_type, 'upt': round(uptime, 1),
-                        }
-
-                        if ml_score >= ALERT_THRESHOLD or is_pre_failure:
-                            alerts_batch.append((
-                                device_id, ts_val,
-                                event.get("lat"), event.get("lng"),
-                                ml_score, failure_type, severity,
-                                event_type, event.get("resolved_failure"),
-                                json.dumps(event),
-                            ))
-                            if is_pre_failure:
-                                log.warning("PRE-FAILURE | device=%s prob=%.2f failure=%s uptime=%.0fs",
-                                            device_id, fail_prob, failure_type, uptime)
+                        if is_pre_failure:
+                            log.warning("PRE-FAILURE | device=%s prob=%.2f failure=%s uptime=%.0fs",
+                                        device_id, fail_prob, failure_type, uptime)
 
                         msg_count += 1
-                        if msg_count % 500 == 0:
-                            log.info("Processed %d events | batch=%d", msg_count, len(metrics_batch))
-
-                elif topic == TOPIC_STATUS:
-                    status_map[event.get("device_id", "?")] = {
-                        'lat': event.get("lat"), 'lng': event.get("lng"),
-                        'sev': 'OK', 'fail': 'None', 'upt': 0,
-                    }
+                        if msg_count % 100 == 0:
+                            log.info("Processed %d events", msg_count)
 
             except Exception as e:
                 log.error("Processing error: %s", e)
@@ -569,15 +484,14 @@ def main():
             # Retention co godzinę
             if time.time() - last_retention > 3600:
                 try:
-                    run_retention(conn)
+                    with conn.cursor() as cur:
+                        cur.execute(f"DELETE FROM hvac_metrics WHERE ts < NOW() - INTERVAL '{RETENTION_HOURS} hours'")
+                    conn.commit()
                     last_retention = time.time()
                 except Exception as e:
                     log.warning("Retention failed: %s", e)
 
     finally:
-        # Ostatni flush
-        if metrics_batch:
-            flush_batch(conn, metrics_batch, status_map, alerts_batch)
         log.info("Closing. Total processed: %d", msg_count)
         consumer.close()
         conn.close()
