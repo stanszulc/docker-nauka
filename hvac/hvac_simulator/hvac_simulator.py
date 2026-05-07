@@ -4,6 +4,10 @@ hvac_simulator.py
 Symulator 25 urządzeń HVAC (15 anomaly + 10 normalOnly) — działa na VM bez przeglądarki.
 Identyczna fizyka jak hvac_simulator_25.html.
 
+Zmiany v4:
+- CLOG: próg torque 60→45, przyrost 0.167 Nm/tick ±0.3 (5 Nm w 5 min), brak rpm drop
+- Izolacja sygnałów: CLOG nie wywołuje PWF
+
 Zmiany v3:
 - CLOG: liniowe narastanie torque 0.667 Nm/tick ±1 (20 Nm w 5 min)
 
@@ -68,7 +72,7 @@ FAILURE_THRESHOLDS = {
     'HDF':     lambda s: (s['proc_temp'] - s['air_temp']) < 8.6 and s['rpm'] < 1380,
     'PWF':     lambda s: (s['torque'] * (s['rpm'] * 2 * math.pi / 60)) < 3500 or
                          (s['torque'] * (s['rpm'] * 2 * math.pi / 60)) > 9000,
-    'CLOG':    lambda s: s['torque'] > 60 or (s['proc_temp'] - s['air_temp']) > 13.5,
+    'CLOG':    lambda s: s['torque'] > 45 or (s['proc_temp'] - s['air_temp']) > 13.5,
     'BEARING': lambda s: s['vibration'] > 0.8,
 }
 
@@ -173,8 +177,7 @@ def tick_state(state, accum, mode, profile, base_rpm=None):
         # ZMIANA v3: liniowe narastanie torque 20 Nm w 30 tickach (5 min)
         # + szum ±1 Nm — wyraźny sygnał dla modelu ML
         accum['CLOG'] = accum.get('CLOG', 0) + 1
-        s['torque']    = clamp(s['torque']    + 0.667 + random.gauss(0, 1) * 1.0, R['torque']['min'], R['torque']['max'])
-        s['rpm']       = clamp(s['rpm']       - 0.5   + random.gauss(0, 1) * 0.5, R['rpm']['min'],    R['rpm']['max'])
+        s['torque']    = clamp(s['torque']    + 0.167 + random.gauss(0, 1) * 0.3, R['torque']['min'], R['torque']['max'])
         s['proc_temp'] = clamp(s['proc_temp'] + 0.05  + random.gauss(0, 1) * 0.1, R['proc_temp']['min'], R['proc_temp']['max'])
 
     elif mode == 'BEARING':
@@ -349,9 +352,9 @@ def send_event(payload: dict, timeout: float = 3.0) -> bool:
 
 
 def main():
-    log.info("HVAC Simulator v3 | %d devices | server=%s | tick=%ds",
+    log.info("HVAC Simulator v4 | %d devices | server=%s | tick=%ds",
              len(DEVICES), SERVER_URL, TICK)
-    log.info("CLOG: liniowe 0.667 Nm/tick ±1 (20 Nm w 5 min)")
+    log.info("CLOG: próg=45 Nm, przyrost 0.167 Nm/tick ±0.3 (5 Nm w 5 min)")
     log.info("Sensor std: rpm=%.0f (było 179), proc_temp=%.2f (było 1.48), air_temp=%.2f (było 2.0)",
              R['rpm']['std'], R['proc_temp']['std'], R['air_temp']['std'])
 
