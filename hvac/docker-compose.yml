@@ -52,7 +52,7 @@ services:
       MODEL_PATH:       "/app/model/hvac_rf_model.pkl"
       ALERT_THRESHOLD:  "0.5"
       CONSECUTIVE_MIN:  "3"
-      RETENTION_HOURS:  "24"
+      RETENTION_HOURS:  "168"
       LOG_LEVEL:        "INFO"
     volumes:
       - ./ml_model:/app/model:ro   # model .pkl mounted read-only
