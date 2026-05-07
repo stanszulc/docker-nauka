@@ -1,8 +1,0 @@
-services:
-  mcp-server:
-    build:
-      context: ./mcp-server
-    container_name: mcp-server
-    ports:
-      - "8001:8001"
-    restart: unless-stopped
