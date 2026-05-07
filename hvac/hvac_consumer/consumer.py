@@ -5,6 +5,7 @@ Zmiany vs v4:
 - Uproszczona pętla główna
 - Cały kod ML (DeviceBuffer, 93 features, infer) bez zmian
 - Kompatybilny z hvac_classifier_v5.pkl
+- [v4s+] Consecutive filter: alarm tylko po CONSECUTIVE_MIN tickach z rzędu
 """
 
 import os
@@ -30,6 +31,7 @@ CONSUMER_GROUP   = os.getenv("CONSUMER_GROUP",   "hvac_ml_group")
 POSTGRES_DSN     = os.getenv("POSTGRES_DSN",     "postgresql://kafka:kafka@postgres:5432/events")
 MODEL_PATH       = os.getenv("MODEL_PATH",       "/app/model/hvac_rf_model.pkl")
 ALERT_THRESHOLD  = float(os.getenv("ALERT_THRESHOLD",  "0.5"))
+CONSECUTIVE_MIN  = int(os.getenv("CONSECUTIVE_MIN",    "1"))   # filtr consecutive
 RETENTION_HOURS  = int(os.getenv("RETENTION_HOURS",    "168"))
 LOG_LEVEL        = os.getenv("LOG_LEVEL",        "INFO")
 
@@ -39,6 +41,7 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger(__name__)
+log.info("Config | threshold=%.2f consecutive_min=%d", ALERT_THRESHOLD, CONSECUTIVE_MIN)
 
 # ── Rolling window config ─────────────────────────────────────────────────────
 WIN_SHORT = 5
@@ -188,12 +191,29 @@ class DeviceBuffer:
 # ── Global state ──────────────────────────────────────────────────────────────
 DEVICE_BUFFERS: dict = {}
 DEVICE_UPTIME:  dict = {}
+DEVICE_STREAK:  dict = {}   # consecutive filter: licznik per device
 
 
 def get_or_create_buffer(device_id: str) -> DeviceBuffer:
     if device_id not in DEVICE_BUFFERS:
         DEVICE_BUFFERS[device_id] = DeviceBuffer()
     return DEVICE_BUFFERS[device_id]
+
+
+def update_streak(device_id: str, is_pre_failure_raw: int) -> int:
+    """
+    Aktualizuje licznik consecutive per device.
+    Zwraca 1 (alarm) tylko jeśli streak >= CONSECUTIVE_MIN.
+    """
+    if is_pre_failure_raw == 1:
+        DEVICE_STREAK[device_id] = DEVICE_STREAK.get(device_id, 0) + 1
+    else:
+        DEVICE_STREAK[device_id] = 0
+    return 1 if DEVICE_STREAK.get(device_id, 0) >= CONSECUTIVE_MIN else 0
+
+
+def reset_streak(device_id: str):
+    DEVICE_STREAK[device_id] = 0
 
 
 # ── Model ─────────────────────────────────────────────────────────────────────
@@ -246,8 +266,12 @@ def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
         X         = np.array([[feats.get(c, 0.0) for c in feat_cols]])
         proba          = bundle['model'].predict_proba(X)[0]
         fail_prob      = float(proba[1])
-        threshold      = bundle.get('threshold', 0.5)
-        is_pre_failure = 1 if fail_prob >= threshold else 0
+        threshold      = float(os.getenv("ALERT_THRESHOLD", str(bundle.get("threshold", 0.5))))
+        is_pre_failure_raw = 1 if fail_prob >= threshold else 0
+
+        # Consecutive filter
+        is_pre_failure = update_streak(device_id, is_pre_failure_raw)
+
         return round(fail_prob, 4), failure_type, is_pre_failure, round(fail_prob, 4)
     except Exception as e:
         log.error("Inference error: %s", e)
@@ -296,6 +320,7 @@ def reset_uptime(device_id: str):
     DEVICE_UPTIME[device_id] = {'uptime': 0.0, 'last_ts': time.time()}
     if device_id in DEVICE_BUFFERS:
         DEVICE_BUFFERS[device_id].reset()
+    reset_streak(device_id)   # reset streak przy service
 
 
 def save_event(conn, event: dict, ml_score, failure_type, is_pre_failure, fail_prob, uptime, severity):
@@ -467,8 +492,10 @@ def main():
                                    is_pre_failure, fail_prob, uptime, severity)
 
                         if is_pre_failure:
-                            log.warning("PRE-FAILURE | device=%s prob=%.2f failure=%s uptime=%.0fs",
-                                        device_id, fail_prob, failure_type, uptime)
+                            log.warning("PRE-FAILURE | device=%s prob=%.2f streak=%d failure=%s uptime=%.0fs",
+                                        device_id, fail_prob,
+                                        DEVICE_STREAK.get(device_id, 0),
+                                        failure_type, uptime)
 
                         msg_count += 1
                         if msg_count % 100 == 0:
