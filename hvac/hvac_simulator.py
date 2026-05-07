@@ -1,9 +1,15 @@
 """
 hvac_simulator.py
 =================
-Symulator 280 urządzeń HVAC (196 anomaly + 84 normalOnly) — działa na VM bez przeglądarki.
+Symulator 25 urządzeń HVAC (15 anomaly + 10 normalOnly) — działa na VM bez przeglądarki.
 Identyczna fizyka jak hvac_simulator_25.html.
-uruchomione paczki
+
+Zmiany v2:
+- RPM std: 179 → 50 (stabilny silnik w normalnej pracy, unikanie strefy HDF)
+- proc_temp std: 1.48 → 0.5 (stabilna temperatura, unikanie strefy HDF/CLOG)
+- air_temp std: 2.0 → 0.5 (stabilna temperatura otoczenia)
+- Szum sensorów w tick_state skalowany do nowych std
+
 Uruchomienie:
     python3 hvac_simulator.py
 
@@ -38,13 +44,20 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── Zakresy sensorów (identyczne z generatorem) ───────────────────────────────
+# ── Zakresy sensorów ──────────────────────────────────────────────────────────
+# ZMIANA v2: zmniejszono std dla RPM, proc_temp i air_temp
+# żeby urządzenia normalOnly nie wpadały losowo w strefy awaryjne
+#
+# Progi awarii HDF: rpm < 1380 AND dT < 8.6  → margines RPM: (1538-1380)/50 = 3.2σ ✅
+# Poprzednio:                                  → margines RPM: (1538-1380)/179 = 0.88σ ❌
+# Próg CLOG: dT > 13.5                        → margines dT: (13.5-10)/0.5 = 7σ ✅
+# Poprzednio:                                  → margines dT: (13.5-10)/1.48 = 2.4σ ⚠️
 R = {
-    'air_temp':  {'min': 295.3, 'max': 304.5, 'mean': 300.0, 'std': 2.0},
-    'proc_temp': {'min': 305.7, 'max': 313.8, 'mean': 310.0, 'std': 1.48},
-    'rpm':       {'min': 1168,  'max': 2886,  'mean': 1538,  'std': 179},
-    'torque':    {'min': 3.8,   'max': 76.6,  'mean': 40.0,  'std': 9.97},
-    'vibration': {'min': 0.01,  'max': 2.0,   'mean': 0.04,  'std': 0.02},
+    'air_temp':  {'min': 295.3, 'max': 304.5, 'mean': 300.0, 'std': 0.5},   # było: 2.0
+    'proc_temp': {'min': 305.7, 'max': 313.8, 'mean': 310.0, 'std': 0.5},   # było: 1.48
+    'rpm':       {'min': 1168,  'max': 2886,  'mean': 1538,  'std': 50},    # było: 179
+    'torque':    {'min': 3.8,   'max': 76.6,  'mean': 40.0,  'std': 3.0},   # bylo: 9.97
+    'vibration': {'min': 0.01,  'max': 2.0,   'mean': 0.04,  'std': 0.02},  # bez zmian
 }
 
 # Progi awarii
@@ -57,15 +70,15 @@ FAILURE_THRESHOLDS = {
 }
 
 MODES        = ['HDF', 'PWF', 'CLOG', 'BEARING']
-MODE_WEIGHTS = [0.30,  0.30,  0.25,   0.15]
+MODE_WEIGHTS = [0.25, 0.25, 0.15, 0.35]
 
 # Urządzenia: SIM_01-15 anomaly, SIM_16-25 normalOnly
 DEVICES = [
     {'id': f'SIM_{i:02d}',
      'lat': round(50.0521 + (i-1)*0.007 + random.uniform(-0.003, 0.003), 4),
      'lng': round(19.9345 + (i-1)*0.005 + random.uniform(-0.003, 0.003), 4),
-     'normal_only': i > 196}
-    for i in range(1, 281)
+     'normal_only': i > 15}
+    for i in range(1, 26)
 ]
 
 
@@ -111,13 +124,13 @@ def detect_failures(s):
 
 
 def tick_state(state, accum, mode, profile, base_rpm=None):
-    """Jeden krok symulacji — identyczna fizyka jak HTML."""
+    """Jeden krok symulacji."""
     s  = dict(state)
     pr = profile
     N  = 0.03
     sc = math.sqrt(TICK)
 
-    # Szum sensorów
+    # Szum sensorów — skalowany do nowych std
     s['air_temp']  = clamp(s['air_temp']  + random.gauss(0,1) * N * R['air_temp']['std']  * sc, R['air_temp']['min'],  R['air_temp']['max'])
     s['proc_temp'] = clamp(s['proc_temp'] + random.gauss(0,1) * N * R['proc_temp']['std'] * sc, R['proc_temp']['min'], R['proc_temp']['max'])
     s['torque']    = clamp(s['torque']    + random.gauss(0,1) * N * R['torque']['std']    * sc, R['torque']['min'],    R['torque']['max'])
@@ -133,6 +146,9 @@ def tick_state(state, accum, mode, profile, base_rpm=None):
     if mode != 'BEARING':
         s['vibration'] = clamp(s['vibration'] + (0.03 - s['vibration']) * 0.08 * TICK,    R['vibration']['min'], 0.07)
     s['air_temp'] = clamp(s['air_temp'] + (R['air_temp']['mean'] - s['air_temp']) * MR, R['air_temp']['min'], R['air_temp']['max'])
+    # RPM mean-reversion gdy brak anomalii
+    if mode == 'NONE':
+        s['rpm'] = clamp(s['rpm'] + (R['rpm']['mean'] - s['rpm']) * MR, R['rpm']['min'], R['rpm']['max'])
 
     # Anomalie
     if mode == 'HDF':
@@ -147,7 +163,6 @@ def tick_state(state, accum, mode, profile, base_rpm=None):
         accum['PWF'] = accum.get('PWF', 0) + 1
         ac    = accum['PWF']
         accel = 1 + (ac / 25) ** 1.5
-        # undervolt
         s['rpm']    = clamp(s['rpm']    - pr['powerDrop']  * TICK * accel, R['rpm']['min'],    R['rpm']['max'])
         s['torque'] = clamp(s['torque'] - pr['powerDrop'] * 0.08 * TICK * accel, R['torque']['min'], R['torque']['max'])
 
@@ -184,9 +199,9 @@ class DeviceSimulator:
         self.accum       = {}
 
         self.uptime      = 0
-        self.phase       = 'warmup'   # warmup | anomaly | failure | service
+        self.phase       = 'warmup'
         self.mode        = None
-        self.warmup_left = random.randint(70, 130) * TICK  # 700-1300s
+        self.warmup_left = random.randint(70, 130) * TICK
 
         # Pseudo-anomalia dla normalOnly
         self.pseudo_active   = False
@@ -196,7 +211,6 @@ class DeviceSimulator:
 
     def step(self):
         """Jeden tick — zwraca dict z danymi do wysłania."""
-        prev = dict(self.state)
 
         if self.phase == 'warmup':
             self.state = tick_state(self.state, self.accum, 'NONE', self.profile)
@@ -218,7 +232,6 @@ class DeviceSimulator:
 
         elif self.phase == 'failure':
             self.state = tick_state(self.state, self.accum, self.mode, self.profile)
-            # Po 30s awarii — wyślij SERVICE i reset
             if self.accum.get(self.mode, 0) > 3:
                 self._service()
 
@@ -236,6 +249,7 @@ class DeviceSimulator:
                 if self.pseudo_type == 'torque_spike':
                     self.state['torque'] = min(self.state['torque'] + 0.1, 46.0)
                 elif self.pseudo_type == 'rpm_drop':
+                    # ZMIANA v2: rpm_drop zatrzymuje się na 1500 (powyżej progu HDF 1380)
                     self.state['rpm'] = max(self.state['rpm'] - 1, 1500.0)
                 elif self.pseudo_type == 'vibration_bump':
                     self.state['vibration'] = min(self.state['vibration'] + 0.002, 0.30)
@@ -245,29 +259,28 @@ class DeviceSimulator:
 
         self.uptime += TICK
 
-        # Oblicz pochodne
         fails  = detect_failures(self.state)
         dT     = self.state['proc_temp'] - self.state['air_temp']
         power  = self.state['torque'] * (self.state['rpm'] * 2 * math.pi / 60)
 
         return {
-            'device_id':     self.id,
-            'session_id':    self.session_id,
-            'lat':           self.lat,
-            'lng':           self.lng,
-            'air_temp':      round(self.state['air_temp'],   2),
-            'proc_temp':     round(self.state['proc_temp'],  2),
-            'rpm':           int(self.state['rpm']),
-            'torque':        round(self.state['torque'],     2),
-            'vibration':     round(self.state['vibration'],  3),
-            'delta_temp':    round(dT,    2),
-            'power_w':       round(power, 1),
-            'ml_score':      0.0,
-            'failure_type':  ','.join(fails) if fails else 'None',
-            'severity':      'CRITICAL' if fails else 'OK',
-            'event_type':    'telemetry',
+            'device_id':      self.id,
+            'session_id':     self.session_id,
+            'lat':            self.lat,
+            'lng':            self.lng,
+            'air_temp':       round(self.state['air_temp'],   2),
+            'proc_temp':      round(self.state['proc_temp'],  2),
+            'rpm':            int(self.state['rpm']),
+            'torque':         round(self.state['torque'],     2),
+            'vibration':      round(self.state['vibration'],  3),
+            'delta_temp':     round(dT,    2),
+            'power_w':        round(power, 1),
+            'ml_score':       0.0,
+            'failure_type':   ','.join(fails) if fails else 'None',
+            'severity':       'CRITICAL' if fails else 'OK',
+            'event_type':     'telemetry',
             'uptime_seconds': self.uptime,
-            'ts':            datetime.now(timezone.utc).isoformat(),
+            'ts':             datetime.now(timezone.utc).isoformat(),
         }
 
     def _service(self):
@@ -329,12 +342,14 @@ def send_event(payload: dict, timeout: float = 3.0) -> bool:
     if len(SEND_BATCH) >= BATCH_SIZE:
         sent = flush_batch()
         return sent > 0
-    return True  # buforujemy
+    return True
 
 
 def main():
-    log.info("HVAC Simulator | %d devices | server=%s | tick=%ds",
+    log.info("HVAC Simulator v2 | %d devices | server=%s | tick=%ds",
              len(DEVICES), SERVER_URL, TICK)
+    log.info("Sensor std: rpm=%.0f (było 179), proc_temp=%.2f (było 1.48), air_temp=%.2f (było 2.0)",
+             R['rpm']['std'], R['proc_temp']['std'], R['air_temp']['std'])
 
     devices = [DeviceSimulator(d) for d in DEVICES]
 
@@ -368,7 +383,6 @@ def main():
                      tick_count, sent_ok, sent_err,
                      ','.join(anomaly_devs) if anomaly_devs else 'none')
 
-        # Czekaj do następnego ticku
         elapsed = time.time() - start
         sleep_t = max(0, TICK - elapsed)
         time.sleep(sleep_t)
