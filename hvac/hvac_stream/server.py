@@ -28,11 +28,11 @@ class TelemetryEvent(BaseModel):
     device_id:        str   = Field(..., min_length=1, max_length=50)
     lat:              float = Field(..., ge=-90.0,  le=90.0)
     lng:              float = Field(..., ge=-180.0, le=180.0)
-    air_temp:         float = Field(..., ge=290.0,  le=310.0)   # rozluźnione — awarie mogą wychodzić
-    proc_temp:        float = Field(..., ge=300.0,  le=320.0)   # rozluźnione — CLOG/HDF przekraczają 313.8
-    rpm:              int   = Field(..., ge=1000,   le=3000)    # rozluźnione
-    torque:           float = Field(..., ge=0.0,    le=100.0)   # rozluźnione — CLOG > 76.6
-    vibration:        float = Field(..., ge=0.0,    le=2.0)
+    air_temp:         float = Field(..., ge=10.0,   le=35.0)    # °C
+    proc_temp:        float = Field(..., ge=40.0,   le=115.0)   # °C
+    rpm:              int   = Field(..., ge=500,    le=2500)
+    torque:           float = Field(..., ge=0.0,    le=75.0)
+    vibration:        float = Field(..., ge=0.0,    le=10.0)    # mm/s RMS
     ml_score:         float = Field(..., ge=0.0,    le=1.0)
     failure_type:     str   = Field(..., max_length=50)
     severity:         Literal["OK", "WARNING", "CRITICAL"]
@@ -47,10 +47,10 @@ class TelemetryEvent(BaseModel):
     @field_validator("failure_type")
     @classmethod
     def validate_failure_type(cls, v: str) -> str:
-        allowed = {"None", "HDF", "PWF", "CLOG", "BEARING", "RESET"}
+        allowed = {"None", "vibration_high", "rpm_low", "rpm_high",
+                   "torque_high", "torque_low", "temp_high", "RESET"}
         parts = set(v.split(","))
         if not parts.issubset(allowed):
-            # Nie rzucaj błędu — po prostu akceptuj
             pass
         return v
 
@@ -84,7 +84,7 @@ async def lifespan(app: FastAPI):
         producer.flush(10)
 
 
-app = FastAPI(title="HVAC Stream API v4", lifespan=lifespan)
+app = FastAPI(title="HVAC Stream API v6", lifespan=lifespan)
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
 
@@ -104,7 +104,6 @@ async def receive_event(event: TelemetryEvent):
 
 @app.post("/events/batch", status_code=202)
 async def receive_batch(events: List[TelemetryEvent]):
-    """Batch endpoint — wysyła 100 eventów naraz."""
     p  = get_producer()
     ts = time.time()
     for event in events:
