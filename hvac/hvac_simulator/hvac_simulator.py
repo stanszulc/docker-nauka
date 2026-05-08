@@ -1,32 +1,28 @@
 """
-hvac_simulator.py
-=================
-Symulator 25 urządzeń HVAC (15 anomaly + 10 normalOnly) — działa na VM bez przeglądarki.
-Identyczna fizyka jak hvac_simulator_25.html.
+hvac_simulator.py v6
+====================
+Symulator urządzeń HVAC z przeprojektowaną fizyką.
 
-Zmiany v5:
-- BEARING: usunięto narastanie torque (izolacja od CLOG trigger)
-- BEARING: bearingAmp 0.008→0.016 (2x szybsze narastanie vibration)
-- CLOG MODE_WEIGHT: 0.15→0.30 (więcej danych CLOG do trenowania)
+Zmiany v6:
+- Temperatury w Celsjuszach (nie Kelwinach)
+- 6 typów defektów per czujnik: vibration↑, rpm↓, rpm↑, torque↑, torque↓, temp↑
+- Wyraźne strefy: normalny → bufor → pre-alarm → alarm → defekt
+- Brak mieszania defektów (każde urządzenie ma jeden typ sygnału)
 
-Zmiany v4:
-- CLOG: próg torque 60→45, przyrost 0.167 Nm/tick ±0.3 (5 Nm w 5 min), brak rpm drop
-- Izolacja sygnałów: CLOG nie wywołuje PWF
+Parametry normalnej pracy:
+  proc_temp:  60°C ±5
+  rpm:        1500 ±50
+  torque:     40 Nm ±3
+  vibration:  0.5 mm/s ±0.2
+  air_temp:   20°C ±2
 
-Zmiany v3:
-- CLOG: liniowe narastanie torque 0.667 Nm/tick ±1 (20 Nm w 5 min)
-
-Zmiany v2:
-- RPM std: 179 → 50 (stabilny silnik w normalnej pracy, unikanie strefy HDF)
-- proc_temp std: 1.48 → 0.5 (stabilna temperatura, unikanie strefy HDF/CLOG)
-- air_temp std: 2.0 → 0.5 (stabilna temperatura otoczenia)
-- Szum sensorów w tick_state skalowany do nowych std
-
-Uruchomienie:
-    python3 hvac_simulator.py
-
-Zatrzymanie:
-    Ctrl+C lub kill PID
+Progi per czujnik:
+  vibration:  normalny <1.8 | bufor 1.8-2.5 | pre-alarm >2.5 | defekt >7.1
+  rpm↓:       normalny 1400-1600 | bufor 1300-1400 | pre-alarm <1300 | defekt <1000
+  rpm↑:       normalny 1400-1600 | bufor 1600-1700 | pre-alarm >1700 | defekt >2000
+  torque↑:    normalny 35-45 | bufor 45-47 | pre-alarm >49 | defekt >65
+  torque↓:    normalny 35-45 | bufor 33-35 | pre-alarm <33 | defekt <15
+  temp↑:      normalny 50-70 | bufor 70-75 | pre-alarm >75 | defekt >100
 """
 
 import os
@@ -45,8 +41,8 @@ import numpy as np
 
 # ── Config ────────────────────────────────────────────────────────────────────
 SERVER_URL   = os.getenv("SERVER_URL",   "http://localhost:8002")
-TICK         = 10       # sekund per krok
-SEND_EVERY   = 1        # wysyłaj co N ticków
+TICK         = 10
+SEND_EVERY   = 1
 LOG_LEVEL    = os.getenv("LOG_LEVEL", "INFO")
 
 logging.basicConfig(
@@ -56,26 +52,28 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# ── Zakresy sensorów ──────────────────────────────────────────────────────────
+# ── Zakresy sensorów (Celsjusze) ──────────────────────────────────────────────
 R = {
-    'air_temp':  {'min': 295.3, 'max': 304.5, 'mean': 300.0, 'std': 0.5},
-    'proc_temp': {'min': 305.7, 'max': 313.8, 'mean': 310.0, 'std': 0.5},
-    'rpm':       {'min': 1168,  'max': 2886,  'mean': 1538,  'std': 50},
-    'torque':    {'min': 3.8,   'max': 76.6,  'mean': 40.0,  'std': 3.0},
-    'vibration': {'min': 0.01,  'max': 2.0,   'mean': 0.04,  'std': 0.02},
+    'air_temp':  {'min': 15.0,  'max': 30.0,  'mean': 20.0, 'std': 2.0},
+    'proc_temp': {'min': 45.0,  'max': 110.0, 'mean': 60.0, 'std': 5.0},
+    'rpm':       {'min': 800,   'max': 2200,  'mean': 1500, 'std': 50},
+    'torque':    {'min': 10.0,  'max': 70.0,  'mean': 40.0, 'std': 3.0},
+    'vibration': {'min': 0.1,   'max': 10.0,  'mean': 0.5,  'std': 0.2},
 }
 
-# Progi awarii
-FAILURE_THRESHOLDS = {
-    'HDF':     lambda s: (s['proc_temp'] - s['air_temp']) < 8.6 and s['rpm'] < 1380,
-    'PWF':     lambda s: (s['torque'] * (s['rpm'] * 2 * math.pi / 60)) < 3500 or
-                         (s['torque'] * (s['rpm'] * 2 * math.pi / 60)) > 9000,
-    'CLOG':    lambda s: s['torque'] > 45 or (s['proc_temp'] - s['air_temp']) > 13.5,
-    'BEARING': lambda s: s['vibration'] > 0.8,
-}
+# ── Typy defektów ─────────────────────────────────────────────────────────────
+FAULT_TYPES   = ['vibration_high', 'rpm_low', 'rpm_high', 'torque_high', 'torque_low', 'temp_high']
+FAULT_WEIGHTS = [1/6, 1/6, 1/6, 1/6, 1/6, 1/6]
 
-MODES        = ['HDF', 'PWF', 'CLOG', 'BEARING']
-MODE_WEIGHTS = [0.25, 0.25, 0.30, 0.20]   # CLOG: 0.15→0.30, BEARING: 0.35→0.20
+# ── Progi defektów ────────────────────────────────────────────────────────────
+FAULT_THRESHOLDS = {
+    'vibration_high': lambda s: s['vibration'] > 7.1,
+    'rpm_low':        lambda s: s['rpm'] < 1000,
+    'rpm_high':       lambda s: s['rpm'] > 2000,
+    'torque_high':    lambda s: s['torque'] > 65,
+    'torque_low':     lambda s: s['torque'] < 15,
+    'temp_high':      lambda s: s['proc_temp'] > 100,
+}
 
 # Urządzenia: SIM_01-15 anomaly, SIM_16-25 normalOnly
 DEVICES = [
@@ -107,29 +105,20 @@ def normal_state():
 
 def generate_profile():
     def rv(nominal, std):
-        return clamp(nominal * (1 + random.gauss(0, 1) * std), nominal * 0.4, nominal * 2.2)
+        return clamp(nominal * (1 + random.gauss(0, 1) * std), nominal * 0.5, nominal * 2.0)
     return {
-        'heatRate':    rv(0.012, 0.30),
-        'heatDecay':   rv(120,   0.25),
-        'heatRpmDrop': rv(0.079, 0.35),
-        'clogTorque':  rv(0.004, 0.30),
-        'clogTemp':    rv(0.001, 0.30),
-        'clogRpm':     rv(0.10,  0.35),
-        'bearingAmp':  rv(0.016, 0.35),   # było 0.008 → 2x szybsze narastanie
-        'bearingMax':  rv(1.8,   0.20),
-        'driftAir':    rv(0.020, 0.30),
-        'driftProc':   rv(0.022, 0.30),
-        'powerDrop':   rv(0.185, 0.30),
-        'powerDecay':  rv(25,    0.25),
+        'vib_rate':  rv(0.07,  0.20),
+        'rpm_rate':  rv(5.0,   0.20),
+        'torq_rate': rv(0.25,  0.20),
+        'temp_rate': rv(0.60,  0.20),
     }
 
 
-def detect_failures(s):
-    return [f for f, check in FAILURE_THRESHOLDS.items() if check(s)]
+def detect_fault(s, fault_type):
+    return FAULT_THRESHOLDS[fault_type](s)
 
 
-def tick_state(state, accum, mode, profile, base_rpm=None):
-    """Jeden krok symulacji."""
+def tick_state(state, mode, profile):
     s  = dict(state)
     pr = profile
     N  = 0.03
@@ -139,55 +128,39 @@ def tick_state(state, accum, mode, profile, base_rpm=None):
     s['air_temp']  = clamp(s['air_temp']  + random.gauss(0,1) * N * R['air_temp']['std']  * sc, R['air_temp']['min'],  R['air_temp']['max'])
     s['proc_temp'] = clamp(s['proc_temp'] + random.gauss(0,1) * N * R['proc_temp']['std'] * sc, R['proc_temp']['min'], R['proc_temp']['max'])
     s['torque']    = clamp(s['torque']    + random.gauss(0,1) * N * R['torque']['std']    * sc, R['torque']['min'],    R['torque']['max'])
-    s['vibration'] = clamp(s['vibration'] + random.gauss(0,1) * N * 0.01                 * sc, R['vibration']['min'], R['vibration']['max'])
+    s['vibration'] = clamp(s['vibration'] + random.gauss(0,1) * N * R['vibration']['std'] * sc, R['vibration']['min'], R['vibration']['max'])
     s['rpm']       = clamp(s['rpm']       + random.gauss(0,1) * N * R['rpm']['std'],            R['rpm']['min'],       R['rpm']['max'])
 
-    # Mean-reversion
+    # Mean-reversion — wyłączona dla aktywnego czujnika defektu
     MR = 0.025 * TICK
-    if mode not in ('HDF', 'CLOG'):
+    if mode != 'temp_high':
         s['proc_temp'] = clamp(s['proc_temp'] + (R['proc_temp']['mean'] - s['proc_temp']) * MR, R['proc_temp']['min'], R['proc_temp']['max'])
-    if mode != 'CLOG':
+    if mode not in ('torque_high', 'torque_low'):
         s['torque']    = clamp(s['torque']    + (R['torque']['mean']    - s['torque'])    * MR, R['torque']['min'],    R['torque']['max'])
-    if mode != 'BEARING':
-        s['vibration'] = clamp(s['vibration'] + (0.03 - s['vibration']) * 0.08 * TICK,    R['vibration']['min'], 0.07)
+    if mode != 'vibration_high':
+        s['vibration'] = clamp(s['vibration'] + (R['vibration']['mean'] - s['vibration']) * MR, R['vibration']['min'], R['vibration']['max'])
+    if mode not in ('rpm_low', 'rpm_high'):
+        s['rpm']       = clamp(s['rpm']       + (R['rpm']['mean']       - s['rpm'])       * MR, R['rpm']['min'],       R['rpm']['max'])
     s['air_temp'] = clamp(s['air_temp'] + (R['air_temp']['mean'] - s['air_temp']) * MR, R['air_temp']['min'], R['air_temp']['max'])
-    if mode == 'NONE':
-        s['rpm'] = clamp(s['rpm'] + (R['rpm']['mean'] - s['rpm']) * MR, R['rpm']['min'], R['rpm']['max'])
 
-    # Anomalie
-    if mode == 'HDF':
-        accum['HDF'] = accum.get('HDF', 0) + 1
-        ac    = accum['HDF']
-        accel = 1 + (ac / 20) ** 1.5
-        s['rpm'] = clamp(s['rpm'] - pr['heatRpmDrop'] * TICK * accel, R['rpm']['min'], R['rpm']['max'])
-        target = s['air_temp'] + 7.5
-        s['proc_temp'] = clamp(s['proc_temp'] + (target - s['proc_temp']) * pr['heatRate'], R['proc_temp']['min'], R['proc_temp']['max'])
-
-    elif mode == 'PWF':
-        accum['PWF'] = accum.get('PWF', 0) + 1
-        ac    = accum['PWF']
-        accel = 1 + (ac / 25) ** 1.5
-        s['rpm']    = clamp(s['rpm']    - pr['powerDrop']  * TICK * accel, R['rpm']['min'],    R['rpm']['max'])
-        s['torque'] = clamp(s['torque'] - pr['powerDrop'] * 0.08 * TICK * accel, R['torque']['min'], R['torque']['max'])
-
-    elif mode == 'CLOG':
-        accum['CLOG'] = accum.get('CLOG', 0) + 1
-        s['torque']    = clamp(s['torque']    + 0.167 + random.gauss(0, 1) * 0.3, R['torque']['min'], R['torque']['max'])
-        s['proc_temp'] = clamp(s['proc_temp'] + 0.05  + random.gauss(0, 1) * 0.1, R['proc_temp']['min'], R['proc_temp']['max'])
-
-    elif mode == 'BEARING':
-        accum['BEARING'] = accum.get('BEARING', 0) + 1
-        ac  = accum['BEARING']
-        amp = clamp(0.04 + ac * pr['bearingAmp'], 0.04, pr['bearingMax'])
-        s['vibration'] = clamp(amp * (0.7 + 0.3 * math.sin(ac * 0.9)) + abs(random.gauss(0,1) * 0.015), 0.01, 2.0)
-        # ZMIANA v5: usunięto s['torque'] += 0.05 * ac — powodowało CLOG trigger zamiast BEARING
+    # Defekty — liniowy przyrost
+    if mode == 'vibration_high':
+        s['vibration'] = clamp(s['vibration'] + pr['vib_rate']  + random.gauss(0,1) * 0.02, R['vibration']['min'], 10.0)
+    elif mode == 'rpm_low':
+        s['rpm']       = clamp(s['rpm']       - pr['rpm_rate']  + random.gauss(0,1) * 2.0,  R['rpm']['min'],       R['rpm']['max'])
+    elif mode == 'rpm_high':
+        s['rpm']       = clamp(s['rpm']       + pr['rpm_rate']  + random.gauss(0,1) * 2.0,  R['rpm']['min'],       R['rpm']['max'])
+    elif mode == 'torque_high':
+        s['torque']    = clamp(s['torque']    + pr['torq_rate'] + random.gauss(0,1) * 0.1,  R['torque']['min'],    70.0)
+    elif mode == 'torque_low':
+        s['torque']    = clamp(s['torque']    - pr['torq_rate'] + random.gauss(0,1) * 0.1,  10.0,                  R['torque']['max'])
+    elif mode == 'temp_high':
+        s['proc_temp'] = clamp(s['proc_temp'] + pr['temp_rate'] + random.gauss(0,1) * 0.2,  R['proc_temp']['min'], 110.0)
 
     return s
 
 
 class DeviceSimulator:
-    """Stan jednego urządzenia HVAC."""
-
     def __init__(self, device_cfg):
         self.id          = device_cfg['id']
         self.lat         = device_cfg['lat']
@@ -197,7 +170,6 @@ class DeviceSimulator:
         self.session_id  = str(uuid.uuid4())
         self.profile     = generate_profile()
         self.state       = normal_state()
-        self.accum       = {}
 
         self.uptime      = 0
         self.phase       = 'warmup'
@@ -211,53 +183,51 @@ class DeviceSimulator:
 
     def step(self):
         if self.phase == 'warmup':
-            self.state = tick_state(self.state, self.accum, 'NONE', self.profile)
+            self.state = tick_state(self.state, 'NONE', self.profile)
             self.warmup_left -= TICK
             if self.warmup_left <= 0:
                 if self.normal_only:
                     self.phase = 'normal_long'
                 else:
-                    self.phase  = 'anomaly'
-                    self.mode   = random.choices(MODES, weights=MODE_WEIGHTS)[0]
-                    log.info("Device %s → anomaly mode %s", self.id, self.mode)
+                    self.phase = 'anomaly'
+                    self.mode  = random.choices(FAULT_TYPES, weights=FAULT_WEIGHTS)[0]
+                    log.info("Device %s → fault mode %s", self.id, self.mode)
 
         elif self.phase == 'anomaly':
-            self.state = tick_state(self.state, self.accum, self.mode, self.profile)
-            fails = detect_failures(self.state)
-            if fails:
+            self.state = tick_state(self.state, self.mode, self.profile)
+            if detect_fault(self.state, self.mode):
                 self.phase = 'failure'
-                log.warning("Device %s → FAILURE %s", self.id, fails)
+                log.warning("Device %s → FAILURE %s", self.id, self.mode)
 
         elif self.phase == 'failure':
-            self.state = tick_state(self.state, self.accum, self.mode, self.profile)
-            if self.accum.get(self.mode, 0) > 3:
-                self._service()
+            self.state = tick_state(self.state, self.mode, self.profile)
+            self._service()
 
         elif self.phase == 'normal_long':
-            self.state = tick_state(self.state, self.accum, 'NONE', self.profile)
+            self.state = tick_state(self.state, 'NONE', self.profile)
             self.pseudo_timer += TICK
             if not self.pseudo_active and self.pseudo_timer > 60 + random.random() * 120:
                 self.pseudo_active   = True
                 self.pseudo_duration = random.randint(10, 30)
                 self.pseudo_timer    = 0
-                self.pseudo_type     = random.choice(['torque_spike', 'rpm_drop', 'vibration_bump'])
+                self.pseudo_type     = random.choice(['torque_spike', 'rpm_drop', 'vibration_bump', 'temp_spike'])
 
             if self.pseudo_active:
                 if self.pseudo_type == 'torque_spike':
-                    self.state['torque'] = min(self.state['torque'] + 0.1, 46.0)
+                    self.state['torque']    = min(self.state['torque']    + 0.1,  48.0)
                 elif self.pseudo_type == 'rpm_drop':
-                    self.state['rpm'] = max(self.state['rpm'] - 1, 1500.0)
+                    self.state['rpm']       = max(self.state['rpm']       - 1,  1350.0)
                 elif self.pseudo_type == 'vibration_bump':
-                    self.state['vibration'] = min(self.state['vibration'] + 0.002, 0.30)
+                    self.state['vibration'] = min(self.state['vibration'] + 0.01, 1.5)
+                elif self.pseudo_type == 'temp_spike':
+                    self.state['proc_temp'] = min(self.state['proc_temp'] + 0.2,  73.0)
                 self.pseudo_duration -= TICK
                 if self.pseudo_duration <= 0:
                     self.pseudo_active = False
 
         self.uptime += TICK
 
-        fails  = detect_failures(self.state)
-        dT     = self.state['proc_temp'] - self.state['air_temp']
-        power  = self.state['torque'] * (self.state['rpm'] * 2 * math.pi / 60)
+        active_faults = [f for f, check in FAULT_THRESHOLDS.items() if check(self.state)]
 
         return {
             'device_id':      self.id,
@@ -269,11 +239,8 @@ class DeviceSimulator:
             'rpm':            int(self.state['rpm']),
             'torque':         round(self.state['torque'],     2),
             'vibration':      round(self.state['vibration'],  3),
-            'delta_temp':     round(dT,    2),
-            'power_w':        round(power, 1),
-            'ml_score':       0.0,
-            'failure_type':   ','.join(fails) if fails else 'None',
-            'severity':       'CRITICAL' if fails else 'OK',
+            'failure_type':   ','.join(active_faults) if active_faults else 'None',
+            'severity':       'CRITICAL' if active_faults else 'OK',
             'event_type':     'telemetry',
             'uptime_seconds': self.uptime,
             'ts':             datetime.now(timezone.utc).isoformat(),
@@ -284,7 +251,6 @@ class DeviceSimulator:
         self.session_id  = str(uuid.uuid4())
         self.profile     = generate_profile()
         self.state       = normal_state()
-        self.accum       = {}
         self.uptime      = 0
         self.phase       = 'warmup'
         self.warmup_left = random.randint(70, 130) * TICK
@@ -300,7 +266,6 @@ class DeviceSimulator:
             'rpm':              int(self.state['rpm']),
             'torque':           round(self.state['torque'], 2),
             'vibration':        round(self.state['vibration'], 3),
-            'ml_score':         0.0,
             'failure_type':     'None',
             'severity':         'OK',
             'event_type':       'service',
@@ -313,6 +278,7 @@ class DeviceSimulator:
 SEND_BATCH: list = []
 BATCH_SIZE = 50
 
+
 def flush_batch(timeout: float = 5.0) -> int:
     global SEND_BATCH
     if not SEND_BATCH:
@@ -320,9 +286,7 @@ def flush_batch(timeout: float = 5.0) -> int:
     batch = SEND_BATCH[:]
     SEND_BATCH = []
     try:
-        r = requests.post(f"{SERVER_URL}/events/batch",
-                          json=batch,
-                          timeout=timeout)
+        r = requests.post(f"{SERVER_URL}/events/batch", json=batch, timeout=timeout)
         if r.status_code in (200, 201, 202):
             return len(batch)
         log.warning("Batch error %d: %s", r.status_code, r.text[:100])
@@ -330,6 +294,7 @@ def flush_batch(timeout: float = 5.0) -> int:
     except Exception as e:
         log.warning("Batch send error: %s", e)
         return 0
+
 
 def send_event(payload: dict, timeout: float = 3.0) -> bool:
     global SEND_BATCH
@@ -341,10 +306,10 @@ def send_event(payload: dict, timeout: float = 3.0) -> bool:
 
 
 def main():
-    log.info("HVAC Simulator v5 | %d devices | server=%s | tick=%ds",
+    log.info("HVAC Simulator v6 | %d devices | server=%s | tick=%ds",
              len(DEVICES), SERVER_URL, TICK)
-    log.info("BEARING fix: torque isolation, bearingAmp=0.016")
-    log.info("CLOG weight: 0.30 (było 0.15)")
+    log.info("Fault types: %s", FAULT_TYPES)
+    log.info("Temps in Celsius | vibration in mm/s RMS")
 
     devices = [DeviceSimulator(d) for d in DEVICES]
 
@@ -373,10 +338,10 @@ def main():
                 sent_err += 1
 
         if tick_count % 10 == 0:
-            anomaly_devs = [d.id for d in devices if d.phase in ('anomaly', 'failure')]
-            log.info("Tick %d | sent ok=%d err=%d | anomaly=%s",
+            fault_devs = [d.id for d in devices if d.phase in ('anomaly', 'failure')]
+            log.info("Tick %d | sent ok=%d err=%d | fault=%s",
                      tick_count, sent_ok, sent_err,
-                     ','.join(anomaly_devs) if anomaly_devs else 'none')
+                     ','.join(fault_devs) if fault_devs else 'none')
 
         elapsed = time.time() - start
         sleep_t = max(0, TICK - elapsed)
@@ -385,5 +350,5 @@ def main():
     log.info("Simulator stopped after %d ticks", tick_count)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
