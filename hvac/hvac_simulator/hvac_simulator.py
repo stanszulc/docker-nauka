@@ -231,6 +231,7 @@ class DeviceSimulator:
 
         return {
             'device_id':      self.id,
+            'ml_score': 0.0,   # ← dodaj tę linię
             'session_id':     self.session_id,
             'lat':            self.lat,
             'lng':            self.lng,
