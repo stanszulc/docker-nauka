@@ -109,12 +109,12 @@ def normal_state():
 
 def generate_profile():
     def rv(nominal, std):
-        return clamp(nominal * (1 + random.gauss(0, 1) * std), nominal * 0.5, nominal * 2.0)
+        return clamp(nominal * (1 + random.gauss(0, 1) * std), nominal * 0.75, nominal * 1.5)
     return {
-        'vib_rate':  rv(0.20,  0.20),
-        'rpm_rate':  rv(2.0,   0.20),
-        'torq_rate': rv(0.80,  0.20),
-        'temp_rate': rv(0.60,  0.20),
+        'vib_rate':  rv(0.20,  0.15),
+        'rpm_rate':  rv(2.0,   0.15),
+        'torq_rate': rv(0.80,  0.15),
+        'temp_rate': rv(0.60,  0.15),
     }
 
 
@@ -222,13 +222,13 @@ class DeviceSimulator:
 
             if self.pseudo_active:
                 if self.pseudo_type == 'torque_spike':
-                    self.state['torque']    = min(self.state['torque']    + 0.1,  48.0)
+                    self.state['torque']    = min(self.state['torque']    + 0.1,  44.0)  # bufor >45
                 elif self.pseudo_type == 'rpm_drop':
-                    self.state['rpm']       = max(self.state['rpm']       - 1,  1350.0)
+                    self.state['rpm']       = max(self.state['rpm']       - 1,  1420.0)  # bufor <1400
                 elif self.pseudo_type == 'vibration_bump':
-                    self.state['vibration'] = min(self.state['vibration'] + 0.01, 1.5)
+                    self.state['vibration'] = min(self.state['vibration'] + 0.01, 1.6)   # bufor >1.8
                 elif self.pseudo_type == 'temp_spike':
-                    self.state['proc_temp'] = min(self.state['proc_temp'] + 0.2,  73.0)
+                    self.state['proc_temp'] = min(self.state['proc_temp'] + 0.2,  69.0)  # bufor >70
                 self.pseudo_duration -= TICK
                 if self.pseudo_duration <= 0:
                     self.pseudo_active = False
