@@ -70,16 +70,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "failure"
+              "options": "Defekt"
             },
             "properties": [
               {
-                "id": "displayName",
-                "value": "Awaria"
-              },
-              {
                 "id": "custom.width",
-                "value": 150
+                "value": 160
               },
               {
                 "id": "custom.cellOptions",
@@ -92,30 +88,45 @@
                 "value": [
                   {
                     "options": {
-                      "BEARING": {
-                        "color": "yellow",
-                        "index": 4,
-                        "text": "⚙ BEARING"
-                      },
-                      "CLOG": {
-                        "color": "orange",
-                        "index": 3,
-                        "text": "🔧 CLOG"
-                      },
-                      "HDF": {
-                        "color": "red",
-                        "index": 1,
-                        "text": "🔥 HDF"
-                      },
                       "None": {
                         "color": "green",
-                        "index": 0,
+                        "index": 7,
                         "text": "✓ OK"
                       },
-                      "PWF": {
-                        "color": "orange",
+                      "rpm_high": {
+                        "color": "blue",
                         "index": 2,
-                        "text": "⚡ PWF"
+                        "text": "↑ rpm_high"
+                      },
+                      "rpm_low": {
+                        "color": "yellow",
+                        "index": 1,
+                        "text": "↓ rpm_low"
+                      },
+                      "temp_high": {
+                        "color": "red",
+                        "index": 5,
+                        "text": "▲ temp_high"
+                      },
+                      "torque_high": {
+                        "color": "red",
+                        "index": 3,
+                        "text": "⊕ torque_high"
+                      },
+                      "torque_low": {
+                        "color": "semi-dark-yellow",
+                        "index": 4,
+                        "text": "⊖ torque_low"
+                      },
+                      "vibration_high": {
+                        "color": "orange",
+                        "index": 0,
+                        "text": "〜 vibration_high"
+                      },
+                      "⚡ pre-alarm": {
+                        "color": "yellow",
+                        "index": 6,
+                        "text": "⚡ pre-alarm"
                       }
                     },
                     "type": "value"
@@ -127,12 +138,12 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "severity"
+              "options": "Status"
             },
             "properties": [
               {
                 "id": "custom.width",
-                "value": 110
+                "value": 120
               },
               {
                 "id": "custom.cellOptions",
@@ -145,15 +156,11 @@
                 "value": [
                   {
                     "options": {
-                      "CRITICAL": {
+                      "🔴 FAILURE": {
                         "color": "red",
-                        "index": 2
-                      },
-                      "OK": {
-                        "color": "green",
                         "index": 0
                       },
-                      "WARNING": {
+                      "🟡 WARNING": {
                         "color": "yellow",
                         "index": 1
                       }
@@ -167,45 +174,18 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "fail_prob"
+              "options": "ML score"
             },
             "properties": [
               {
-                "id": "displayName",
-                "value": "Ryzyko awarii"
-              },
-              {
-                "id": "unit",
-                "value": "percentunit"
-              },
-              {
                 "id": "custom.width",
-                "value": 150
+                "value": 100
               },
               {
                 "id": "custom.cellOptions",
                 "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "thresholds",
-                "value": {
-                  "mode": "absolute",
-                  "steps": [
-                    {
-                      "color": "green",
-                      "value": null
-                    },
-                    {
-                      "color": "yellow",
-                      "value": 0.4
-                    },
-                    {
-                      "color": "red",
-                      "value": 0.7
-                    }
-                  ]
+                  "mode": "gradient",
+                  "type": "gauge"
                 }
               }
             ]
@@ -213,74 +193,36 @@
           {
             "matcher": {
               "id": "byName",
-              "options": "is_pre_failure"
+              "options": "Ryzyko"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "Pre-failure"
-              },
               {
                 "id": "custom.width",
-                "value": 120
-              },
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "options": {
-                      "0": {
-                        "color": "green",
-                        "index": 0,
-                        "text": "OK"
-                      },
-                      "1": {
-                        "color": "red",
-                        "index": 1,
-                        "text": "⚠ ALARM"
-                      }
-                    },
-                    "type": "value"
-                  }
-                ]
+                "value": 100
               }
             ]
           },
           {
             "matcher": {
               "id": "byName",
-              "options": "uptime_min"
+              "options": "Uptime (min)"
             },
             "properties": [
-              {
-                "id": "displayName",
-                "value": "Uptime (min)"
-              },
-              {
-                "id": "custom.width",
-                "value": 120
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "seconds_ago"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Ostatni (s)"
-              },
               {
                 "id": "custom.width",
                 "value": 110
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Ostatni (s)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 100
               }
             ]
           }
@@ -315,25 +257,8 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT \n  s.device_id,\n  s.last_failure_type AS failure,\n  s.last_severity AS severity,\n  ROUND(m.fail_probability::numeric, 2) AS fail_prob,\n  m.is_pre_failure,\n  ROUND(s.uptime_seconds::numeric/60, 1) AS uptime_min,\n  ROUND(EXTRACT(EPOCH FROM (NOW() - s.last_seen))::numeric, 0) AS seconds_ago\nFROM hvac_device_status s\nLEFT JOIN LATERAL (\n  SELECT fail_probability, is_pre_failure\n  FROM hvac_metrics\n  WHERE device_id = s.device_id\n  ORDER BY ts DESC LIMIT 1\n) m ON true\nWHERE s.last_seen > NOW() - INTERVAL '10 minutes'\nORDER BY fail_prob DESC NULLS LAST",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
+          "rawSql": "SELECT \n  s.device_id,\n  CASE \n    WHEN s.last_failure_type IS NOT NULL \n     AND s.last_failure_type != 'None' THEN s.last_failure_type\n    ELSE '⚡ pre-alarm'\n  END AS \"Defekt\",\n  CASE\n    WHEN s.last_failure_type IS NOT NULL \n     AND s.last_failure_type != 'None' THEN '🔴 FAILURE'\n    ELSE '🟡 WARNING'\n  END AS \"Status\",\n  ROUND(m.ml_score::numeric, 3) AS \"ML score\",\n  ROUND(m.fail_probability::numeric * 100, 0) || '%' AS \"Ryzyko\",\n  ROUND(s.uptime_seconds::numeric / 60, 1) AS \"Uptime (min)\",\n  ROUND(EXTRACT(EPOCH FROM (NOW() - s.last_seen))::numeric, 0) AS \"Ostatni (s)\"\nFROM hvac_device_status s\nLEFT JOIN LATERAL (\n  SELECT ml_score, fail_probability, is_pre_failure\n  FROM hvac_metrics\n  WHERE device_id = s.device_id\n  ORDER BY ts DESC LIMIT 1\n) m ON true\nWHERE s.last_seen > NOW() - INTERVAL '2 minutes'\n  AND (\n    (s.last_failure_type IS NOT NULL AND s.last_failure_type != 'None')\n    OR m.is_pre_failure = 1\n  )\nORDER BY \n  CASE WHEN s.last_failure_type IS NOT NULL AND s.last_failure_type != 'None' \n       THEN 0 ELSE 1 END,\n  m.fail_probability DESC NULLS LAST",
+          "refId": "A"
         }
       ],
       "title": "🏢 Device Tower",
@@ -414,28 +339,11 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT NOW() AS time, COUNT(*) AS \"Urządzenia online\" FROM hvac_device_status WHERE last_seen > NOW() - INTERVAL '1 minutes'",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
+          "rawSql": "SELECT NOW() AS time, COUNT(*) AS \"Urządzenia online\" FROM hvac_device_status WHERE last_seen > NOW() - INTERVAL '2 minutes'",
+          "refId": "A"
         }
       ],
-      "title": "⚠ Urządzenia  aktywne",
+      "title": "⚠ Urządzenia aktywne",
       "type": "stat"
     },
     {
@@ -457,7 +365,7 @@
                 "value": null
               },
               {
-                "color": "dark-purple",
+                "color": "red",
                 "value": 1
               }
             ]
@@ -500,580 +408,11 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT NOW() AS time, COUNT(*) AS \"Urządzenia w awarii\" FROM hvac_device_status WHERE last_failure_type != 'None'",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
+          "rawSql": "SELECT NOW() AS time, COUNT(*) AS \"Awarie aktywne\"\nFROM hvac_device_status\nWHERE last_failure_type IS NOT NULL\n  AND last_failure_type != 'None'\n  AND last_seen > NOW() - INTERVAL '2 minutes'",
+          "refId": "A"
         }
       ],
       "title": "⚠ Awarie aktywne",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "custom": {
-            "align": "auto",
-            "cellOptions": {
-              "type": "auto"
-            },
-            "filterable": false,
-            "inspect": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "last_failure_type"
-            },
-            "properties": [
-              {
-                "id": "custom.cellOptions",
-                "value": {
-                  "type": "color-background"
-                }
-              },
-              {
-                "id": "mappings",
-                "value": [
-                  {
-                    "options": {
-                      "HDF": {
-                        "color": "red",
-                        "index": 0,
-                        "text": "HDF — Przegrzanie"
-                      },
-                      "OSF": {
-                        "color": "red",
-                        "index": 2,
-                        "text": "OSF — Przeciążenie"
-                      },
-                      "PWF": {
-                        "color": "orange",
-                        "index": 1,
-                        "text": "PWF — Zasilanie"
-                      },
-                      "TWF": {
-                        "color": "yellow",
-                        "index": 3,
-                        "text": "TWF — Zużycie"
-                      }
-                    },
-                    "type": "value"
-                  }
-                ]
-              },
-              {
-                "id": "displayName",
-                "value": "Typ awarii"
-              },
-              {
-                "id": "custom.width",
-                "value": 200
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "device_id"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Urządzenie"
-              },
-              {
-                "id": "custom.width",
-                "value": 120
-              }
-            ]
-          },
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "last_seen"
-            },
-            "properties": [
-              {
-                "id": "displayName",
-                "value": "Ostatni kontakt"
-              },
-              {
-                "id": "custom.width",
-                "value": 180
-              }
-            ]
-          }
-        ]
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 16,
-        "x": 8,
-        "y": 9
-      },
-      "id": 201,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": [
-            "sum"
-          ],
-          "show": false
-        },
-        "showHeader": true,
-        "sortBy": [
-          {
-            "desc": true,
-            "displayName": "last_seen"
-          }
-        ]
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "table",
-          "rawSql": "SELECT device_id, last_failure_type, last_severity, last_seen FROM hvac_device_status WHERE last_failure_type != 'None' ORDER BY last_seen DESC",
-          "refId": "A"
-        }
-      ],
-      "title": "Urządzenia w awarii",
-      "type": "table"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "max": 1,
-          "min": 0,
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.4
-              },
-              {
-                "color": "red",
-                "value": 0.7
-              }
-            ]
-          },
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 0,
-        "y": 13
-      },
-      "id": 1,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT NOW() AS time, ml_score FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
-          "refId": "A"
-        }
-      ],
-      "title": "ML Score — ostatni",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "CRITICAL": {
-                  "color": "red",
-                  "index": 2
-                },
-                "OK": {
-                  "color": "green",
-                  "index": 0
-                },
-                "WARNING": {
-                  "color": "yellow",
-                  "index": 1
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 4,
-        "y": 13
-      },
-      "id": 2,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT NOW() AS time, severity FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Severity",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "green",
-                  "index": 0,
-                  "text": "None"
-                },
-                "1": {
-                  "color": "red",
-                  "index": 1,
-                  "text": "HDF — Przegrzanie"
-                },
-                "2": {
-                  "color": "orange",
-                  "index": 2,
-                  "text": "PWF — Awaria zasilania"
-                },
-                "3": {
-                  "color": "red",
-                  "index": 3,
-                  "text": "OSF — Przeciążenie"
-                },
-                "4": {
-                  "color": "yellow",
-                  "index": 4,
-                  "text": "TWF — Zużycie narzędzia"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "red",
-                "value": 2
-              }
-            ]
-          }
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 13
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT NOW() AS time,\nCASE failure_type\n  WHEN 'None' THEN 0\n  WHEN 'HDF' THEN 1\n  WHEN 'PWF' THEN 2\n  WHEN 'OSF' THEN 3\n  WHEN 'TWF' THEN 4\n  ELSE 0\nEND AS failure_type\nFROM hvac_metrics\nWHERE device_id = $device_id\nORDER BY ts DESC LIMIT 1",
-          "refId": "A"
-        }
-      ],
-      "title": "Failure Type",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 2500
-              },
-              {
-                "color": "red",
-                "value": 2800
-              }
-            ]
-          },
-          "unit": "rpm"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 12,
-        "y": 13
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "value",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT NOW() AS time, rpm FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
-          "refId": "A"
-        }
-      ],
-      "title": "RPM — ostatni",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 3
-              },
-              {
-                "color": "red",
-                "value": 5
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 13
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "percentChangeColorMode": "standard",
-        "reduceOptions": {
-          "calcs": [
-            "sum"
-          ],
-          "fields": "",
-          "values": false
-        },
-        "showPercentChange": false,
-        "textMode": "auto",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT NOW() AS time, COUNT(*) AS alerts FROM hvac_alerts_log WHERE device_id = $device_id AND ts > NOW() - INTERVAL '1 hour'",
-          "refId": "A"
-        }
-      ],
-      "title": "Alerty (ostatnia godzina)",
       "type": "stat"
     },
     {
@@ -1082,7 +421,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 17
+        "y": 13
       },
       "id": 101,
       "panels": [],
@@ -1135,7 +474,7 @@
         "h": 13,
         "w": 24,
         "x": 0,
-        "y": 18
+        "y": 14
       },
       "id": 10,
       "options": {
@@ -1222,7 +561,493 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT \n  device_id, \n  lat AS latitude, \n  lng AS longitude, \n  last_severity AS severity,\n  last_failure_type,\n  last_seen,\n  CASE \n    WHEN last_failure_type != 'None' THEN 0.95\n    WHEN last_severity = 'CRITICAL' THEN 0.85\n    WHEN last_severity = 'WARNING' THEN 0.55\n    ELSE 0.2\n  END AS score\nFROM hvac_device_status\nWHERE last_seen > NOW() - INTERVAL '1 minutes'",
+          "rawSql": "SELECT \n  device_id, \n  lat AS latitude, \n  lng AS longitude, \n  last_severity AS severity,\n  last_failure_type,\n  last_seen,\n  CASE \n    WHEN last_failure_type != 'None' THEN 0.95\n    WHEN last_severity = 'CRITICAL' THEN 0.85\n    WHEN last_severity = 'WARNING' THEN 0.55\n    ELSE 0.2\n  END AS score\nFROM hvac_device_status\nWHERE last_seen > NOW() - INTERVAL '2 minutes'",
+          "refId": "A"
+        }
+      ],
+      "title": "Mapa urządzeń HVAC",
+      "type": "geomap"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      },
+      "id": 299,
+      "panels": [],
+      "title": "AKTUALNE WARTOŚCI CZUJNIKÓW — $device_id",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 40,
+          "min": 15,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 30
+              },
+              {
+                "color": "red",
+                "value": 35
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 0,
+        "y": 28
+      },
+      "id": 300,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "text": {}
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, air_temp FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Air Temp (°C)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 110,
+          "min": 45,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 70
+              },
+              {
+                "color": "red",
+                "value": 75
+              }
+            ]
+          },
+          "unit": "celsius"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 4,
+        "y": 28
+      },
+      "id": 301,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "text": {}
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, proc_temp FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Proc Temp (°C)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 2200,
+          "min": 800,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1300
+              },
+              {
+                "color": "green",
+                "value": 1400
+              },
+              {
+                "color": "yellow",
+                "value": 1600
+              },
+              {
+                "color": "red",
+                "value": 1700
+              }
+            ]
+          },
+          "unit": "rotrpm"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 8,
+        "y": 28
+      },
+      "id": 302,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "text": {}
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, rpm FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "RPM",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 80,
+          "min": 10,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 33
+              },
+              {
+                "color": "green",
+                "value": 35
+              },
+              {
+                "color": "yellow",
+                "value": 45
+              },
+              {
+                "color": "red",
+                "value": 49
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 12,
+        "y": 28
+      },
+      "id": 303,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "text": {}
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, torque FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Torque (Nm)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "max": 8,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.8
+              },
+              {
+                "color": "red",
+                "value": 2.5
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 16,
+        "y": 28
+      },
+      "id": 304,
+      "options": {
+        "minVizHeight": 75,
+        "minVizWidth": 75,
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showThresholdLabels": true,
+        "showThresholdMarkers": true,
+        "sizing": "auto",
+        "text": {}
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT NOW() AS time, vibration FROM hvac_metrics WHERE device_id = $device_id ORDER BY ts DESC LIMIT 1",
+          "refId": "A"
+        }
+      ],
+      "title": "Vibration (mm/s)",
+      "type": "gauge"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "NORMAL"
+                },
+                "1": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "ALARM"
+                },
+                "2": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "FAILURE"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 2
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 6,
+        "w": 4,
+        "x": 20,
+        "y": 28
+      },
+      "id": 305,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "percentChangeColorMode": "standard",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "showPercentChange": false,
+        "text": {
+          "valueSize": 24
+        },
+        "textMode": "value",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "editorMode": "code",
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT NOW() AS time,\nMAX(CASE\n  WHEN failure_type != 'None' THEN 2\n  WHEN is_pre_failure = 1     THEN 1\n  ELSE 0\nEND) AS status\nFROM hvac_metrics\nWHERE device_id = $device_id\n  AND ts > NOW() - INTERVAL '30 seconds'",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1243,8 +1068,8 @@
           }
         }
       ],
-      "title": "Mapa urządzeń HVAC",
-      "type": "geomap"
+      "title": "STATUS — $device_id",
+      "type": "stat"
     },
     {
       "datasource": {
@@ -1317,7 +1142,7 @@
         "h": 12,
         "w": 12,
         "x": 0,
-        "y": 31
+        "y": 34
       },
       "id": 11,
       "options": {
@@ -1358,7 +1183,7 @@
       "fieldConfig": {
         "defaults": {
           "color": {
-            "mode": "palette-classic"
+            "mode": "thresholds"
           },
           "custom": {
             "axisBorderShow": false,
@@ -1381,7 +1206,30 @@
               "mode": "off"
             }
           },
-          "mappings": [],
+          "mappings": [
+            {
+              "options": {
+                "0.5": {
+                  "color": "green",
+                  "index": 0,
+                  "text": "OK"
+                },
+                "1.5": {
+                  "color": "yellow",
+                  "index": 1,
+                  "text": "Pre-alarm"
+                },
+                "2.5": {
+                  "color": "red",
+                  "index": 2,
+                  "text": "Awaria"
+                }
+              },
+              "type": "value"
+            }
+          ],
+          "max": 3,
+          "min": 0,
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -1390,8 +1238,12 @@
                 "value": null
               },
               {
+                "color": "yellow",
+                "value": 1
+              },
+              {
                 "color": "red",
-                "value": 80
+                "value": 2
               }
             ]
           }
@@ -1402,13 +1254,13 @@
         "h": 12,
         "w": 12,
         "x": 12,
-        "y": 31
+        "y": 34
       },
       "id": 206,
       "options": {
         "barRadius": 0,
         "barWidth": 0.97,
-        "fullHighlight": false,
+        "fullHighlight": true,
         "groupWidth": 0.7,
         "legend": {
           "calcs": [],
@@ -1417,7 +1269,7 @@
           "showLegend": true
         },
         "orientation": "auto",
-        "showValue": "auto",
+        "showValue": "never",
         "stacking": "none",
         "tooltip": {
           "mode": "single",
@@ -1436,130 +1288,12 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT\n  date_trunc('minute', ts) AS time,\n  MIN(CASE WHEN failure_type = 'None' THEN 1 ELSE 0 END) AS \"Stan (1=OK 0=awaria)\"\nFROM hvac_metrics\nWHERE device_id = $device_id\n  AND ts >= NOW() - INTERVAL '3 hours'\nGROUP BY 1\nORDER BY 1 ASC",
-          "refId": "A",
-          "sql": {
-            "columns": [
-              {
-                "parameters": [],
-                "type": "function"
-              }
-            ],
-            "groupBy": [
-              {
-                "property": {
-                  "type": "string"
-                },
-                "type": "groupBy"
-              }
-            ],
-            "limit": 50
-          }
-        }
-      ],
-      "title": "PRACA/AWARIA",
-      "type": "barchart"
-    },
-    {
-      "datasource": {
-        "type": "postgres",
-        "uid": "PCC52D03280B7034C"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisBorderShow": false,
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "barWidthFactor": 0.6,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "insertNulls": false,
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "never",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 38
-              },
-              {
-                "color": "red",
-                "value": 41.5
-              }
-            ]
-          },
-          "unit": "celsius"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 43
-      },
-      "id": 20,
-      "options": {
-        "legend": {
-          "calcs": [
-            "lastNotNull"
-          ],
-          "displayMode": "table",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.4.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "postgres",
-            "uid": "PCC52D03280B7034C"
-          },
-          "format": "time_series",
-          "rawSql": "SELECT ts AS time, (air_temp - 273.15) AS \"Air Temp\", (proc_temp - 273.15) AS \"Process Temp\" FROM hvac_metrics WHERE device_id = $device_id AND ts >= NOW() - INTERVAL '3 hours' ORDER BY ts ASC",
+          "rawSql": "SELECT\n  date_trunc('minute', ts) AS time,\n  MAX(CASE\n    WHEN failure_type != 'None' THEN 2.5\n    WHEN is_pre_failure = 1     THEN 1.5\n    ELSE 0.5\n  END) AS \"Status\"\nFROM hvac_metrics\nWHERE device_id = $device_id\n  AND ts BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz\nGROUP BY 1\nORDER BY 1 ASC",
           "refId": "A"
         }
       ],
-      "title": "Temperatura (°C)",
-      "type": "timeseries"
+      "title": "PRACA / PRE-ALARM / AWARIA — $device_id",
+      "type": "barchart"
     },
     {
       "datasource": {
@@ -1629,8 +1363,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 43
+        "x": 0,
+        "y": 46
       },
       "id": 21,
       "options": {
@@ -1706,7 +1440,6 @@
               "mode": "off"
             }
           },
-          "displayName": "Torque (Nm)",
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
@@ -1717,25 +1450,25 @@
               },
               {
                 "color": "yellow",
-                "value": 60
+                "value": 70
               },
               {
                 "color": "red",
-                "value": 70
+                "value": 75
               }
             ]
           },
-          "unit": "short"
+          "unit": "celsius"
         },
         "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 0,
-        "y": 51
+        "x": 12,
+        "y": 46
       },
-      "id": 22,
+      "id": 20,
       "options": {
         "legend": {
           "calcs": [
@@ -1758,11 +1491,11 @@
             "uid": "PCC52D03280B7034C"
           },
           "format": "time_series",
-          "rawSql": "SELECT ts AS time, torque FROM hvac_metrics WHERE device_id = $device_id AND ts >= NOW() - INTERVAL '3 hours' ORDER BY ts ASC",
+          "rawSql": "SELECT ts AS time, air_temp AS \"Air Temp (°C)\", proc_temp AS \"Proc Temp (°C)\" FROM hvac_metrics WHERE device_id = $device_id AND ts >= NOW() - INTERVAL '3 hours' ORDER BY ts ASC",
           "refId": "A"
         }
       ],
-      "title": "Torque (Nm)",
+      "title": "Temperatura (°C)",
       "type": "timeseries"
     },
     {
@@ -1833,8 +1566,8 @@
       "gridPos": {
         "h": 8,
         "w": 12,
-        "x": 12,
-        "y": 51
+        "x": 0,
+        "y": 54
       },
       "id": 23,
       "options": {
@@ -1864,7 +1597,109 @@
           "refId": "A"
         }
       ],
-      "title": "Wibracje (mm/s²)",
+      "title": "Wibracje (mm/s)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisBorderShow": false,
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "barWidthFactor": 0.6,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "insertNulls": false,
+            "lineInterpolation": "smooth",
+            "lineWidth": 2,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "displayName": "Torque (Nm)",
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 60
+              },
+              {
+                "color": "red",
+                "value": 70
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 54
+      },
+      "id": 22,
+      "options": {
+        "legend": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "time_series",
+          "rawSql": "SELECT ts AS time, torque FROM hvac_metrics WHERE device_id = $device_id AND ts >= NOW() - INTERVAL '3 hours' ORDER BY ts ASC",
+          "refId": "A"
+        }
+      ],
+      "title": "Torque (Nm)",
       "type": "timeseries"
     },
     {
@@ -1873,12 +1708,344 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 62
       },
-      "id": 102,
+      "id": 400,
       "panels": [],
-      "title": "SENSORY — $device_id",
+      "title": "HISTORIA AWARII — $device_id",
       "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": true,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Typ defektu"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "custom.width",
+                "value": 160
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "rpm_high": {
+                        "color": "blue",
+                        "index": 2,
+                        "text": "↑ rpm_high"
+                      },
+                      "rpm_low": {
+                        "color": "yellow",
+                        "index": 1,
+                        "text": "↓ rpm_low"
+                      },
+                      "temp_high": {
+                        "color": "red",
+                        "index": 5,
+                        "text": "▲ temp_high"
+                      },
+                      "torque_high": {
+                        "color": "red",
+                        "index": 3,
+                        "text": "⊕ torque_high"
+                      },
+                      "torque_low": {
+                        "color": "yellow",
+                        "index": 4,
+                        "text": "⊖ torque_low"
+                      },
+                      "vibration_high": {
+                        "color": "orange",
+                        "index": 0,
+                        "text": "⚡ vibration_high"
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lead time (s)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              },
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "yellow",
+                      "value": 60
+                    },
+                    {
+                      "color": "green",
+                      "value": 120
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Lead time (min)"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Liczba alertów"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 120
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Timestamp awarii"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Pierwszy alert"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 180
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 63
+      },
+      "id": 401,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": []
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "editorMode": "code",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "\nWITH raw AS (\n  SELECT\n    device_id, ts, failure_type, ml_score, is_pre_failure, uptime_seconds,\n    LAG(ts) OVER (PARTITION BY device_id ORDER BY ts) AS prev_ts\n  FROM hvac_metrics\n  WHERE device_id = $device_id\n    AND ts BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz\n),\nepisodes AS (\n  SELECT *,\n    CASE WHEN failure_type != 'None'\n          AND (prev_ts IS NULL OR EXTRACT(EPOCH FROM (ts - prev_ts)) > 300)\n         THEN 1 ELSE 0 END AS episode_start\n  FROM raw\n  WHERE failure_type != 'None'\n),\nnumbered AS (\n  SELECT *,\n    SUM(episode_start) OVER (PARTITION BY device_id ORDER BY ts) AS ep_num\n  FROM episodes\n),\nagg AS (\n  SELECT\n    device_id, ep_num, failure_type,\n    MIN(ts) AS failure_ts, MAX(ts) AS failure_end,\n    COUNT(*) AS failure_ticks, AVG(ml_score) AS avg_score\n  FROM numbered\n  GROUP BY device_id, ep_num, failure_type\n),\npre AS (\n  SELECT\n    a.ep_num, a.failure_type, a.failure_ts, a.failure_ticks, a.avg_score,\n    MIN(m.ts) AS first_alert_ts,\n    COUNT(m.ts) AS alert_count\n  FROM agg a\n  LEFT JOIN hvac_metrics m ON m.device_id = a.device_id\n    AND m.ts BETWEEN a.failure_ts - INTERVAL '10 minutes' AND a.failure_ts\n    AND (m.is_pre_failure = 1 OR m.ml_score >= 0.5)\n    AND m.failure_type = 'None'\n  GROUP BY a.ep_num, a.failure_type, a.failure_ts, a.failure_ticks, a.avg_score\n)\nSELECT\n  failure_ts AS \"Timestamp awarii\",\n  failure_type AS \"Typ defektu\",\n  first_alert_ts AS \"Pierwszy alert\",\n  alert_count AS \"Liczba alertów\",\n  ROUND(EXTRACT(EPOCH FROM (failure_ts - first_alert_ts))::numeric, 0) AS \"Lead time (s)\",\n  ROUND(EXTRACT(EPOCH FROM (failure_ts - first_alert_ts))::numeric / 60, 1) AS \"Lead time (min)\",\n  failure_ticks AS \"Ticki awarii\",\n  ROUND(avg_score::numeric, 3) AS \"Avg ML score\"\nFROM pre\nORDER BY failure_ts DESC\n",
+          "refId": "A"
+        }
+      ],
+      "title": "📋 Epizody awarii — $device_id",
+      "type": "table"
+    },
+    {
+      "datasource": {
+        "type": "postgres",
+        "uid": "PCC52D03280B7034C"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "filterable": false,
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Kolumna"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 160
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              },
+              {
+                "id": "color",
+                "value": {
+                  "fixedColor": "blue",
+                  "mode": "fixed"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Co oznacza"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 280
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Jak interpretować"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 500
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 73
+      },
+      "id": 402,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": [
+            "sum"
+          ],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.4.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "postgres",
+            "uid": "PCC52D03280B7034C"
+          },
+          "format": "table",
+          "rawSql": "\nSELECT\n  kolumna AS \"Kolumna\",\n  opis    AS \"Co oznacza\",\n  jak_czytac AS \"Jak interpretować\"\nFROM (VALUES\n  ('Typ defektu',     'Rodzaj wykrytej usterki przez fizykę v6',          'vibration_high=drgania, rpm_low/high=obroty, torque_high/low=moment, temp_high=temperatura'),\n  ('Timestamp awarii','Moment przejścia urządzenia w stan FAILURE',        'Pierwsza próbka gdzie failure_type != None po okresie normalnej pracy'),\n  ('Pierwszy alert',  'Kiedy model ML po raz pierwszy zaalarmował',        'Najwcześniejszy tick z is_pre_failure=1 przed awarią'),\n  ('Liczba alertów',  'Ile razy model alarmował w oknie 10 min przed awarią', 'Więcej = model był bardziej pewny wcześniej'),\n  ('Lead time (s)',   'Wyprzedzenie wykrycia — ile sekund PRZED awarią',   'Zielony >120s, żółty 60-120s, czerwony <60s'),\n  ('Lead time (min)', 'To samo w minutach dla czytelności',                'Cel: >2 min, optymalnie >4 min')\n) AS t(kolumna, opis, jak_czytac)\n",
+          "refId": "A"
+        }
+      ],
+      "title": "📖 Jak czytać tabelę awarii",
+      "type": "table"
     },
     {
       "collapsed": false,
@@ -1886,7 +2053,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 60
+        "y": 81
       },
       "id": 103,
       "panels": [],
@@ -2004,7 +2171,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 61
+        "y": 82
       },
       "id": 30,
       "options": {
@@ -2046,7 +2213,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 71
+        "y": 92
       },
       "id": 104,
       "panels": [],
@@ -2140,7 +2307,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 72
+        "y": 93
       },
       "id": 31,
       "options": {
@@ -2169,7 +2336,7 @@
             "uid": "PCC52D03280B7034C"
           },
           "format": "table",
-          "rawSql": "SELECT ts, device_id, ROUND((air_temp - 273.15)::numeric, 1) AS air_c, ROUND((proc_temp - 273.15)::numeric, 1) AS proc_c, rpm, ROUND(torque::numeric, 1) AS torque_nm, tool_wear, ROUND(vibration::numeric, 3) AS vibration, ROUND(ml_score::numeric, 3) AS ml_score, failure_type, severity FROM hvac_metrics WHERE device_id = $device_id AND ts >= NOW() - INTERVAL '3 hours' ORDER BY ts DESC LIMIT 200",
+          "rawSql": "SELECT ts, device_id, ROUND(air_temp::numeric, 1) AS air_c, ROUND(proc_temp::numeric, 1) AS proc_c, rpm, ROUND(torque::numeric, 1) AS torque_nm, ROUND(vibration::numeric, 3) AS vibration, ROUND(ml_score::numeric, 3) AS ml_score, failure_type, severity FROM hvac_metrics WHERE device_id = $device_id AND ts >= NOW() - INTERVAL '3 hours' ORDER BY ts DESC LIMIT 200",
           "refId": "A"
         }
       ],
@@ -2217,6 +2384,6 @@
   "timezone": "browser",
   "title": "HVAC Predictive Maintenance",
   "uid": "hvac-predictive-maintenance",
-  "version": 28,
+  "version": 60,
   "weekStart": ""
 }
