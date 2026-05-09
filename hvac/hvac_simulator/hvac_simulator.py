@@ -111,9 +111,9 @@ def generate_profile():
     def rv(nominal, std):
         return clamp(nominal * (1 + random.gauss(0, 1) * std), nominal * 0.5, nominal * 2.0)
     return {
-        'vib_rate':  rv(0.07,  0.20),
-        'rpm_rate':  rv(5.0,   0.20),
-        'torq_rate': rv(0.25,  0.20),
+        'vib_rate':  rv(0.20,  0.20),
+        'rpm_rate':  rv(2.0,   0.20),
+        'torq_rate': rv(0.80,  0.20),
         'temp_rate': rv(0.60,  0.20),
     }
 
