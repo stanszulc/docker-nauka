@@ -8,6 +8,7 @@ Zmiany v6:
 - 6 typów defektów per czujnik: vibration↑, rpm↓, rpm↑, torque↑, torque↓, temp↑
 - Wyraźne strefy: normalny → bufor → pre-alarm → alarm → defekt
 - Brak mieszania defektów (każde urządzenie ma jeden typ sygnału)
+- FIX: failure_ticks — urządzenie zostaje w fazie failure min. 12 ticków (2 min)
 
 Parametry normalnej pracy:
   proc_temp:  60°C ±5
@@ -83,6 +84,9 @@ DEVICES = [
      'normal_only': i > 15}
     for i in range(1, 26)
 ]
+
+# ── Czas w fazie failure przed SERVICE ───────────────────────────────────────
+FAILURE_TICKS_MIN = 12  # 12 × 10s = 120s = 2 minuty
 
 
 def clamp(v, a, b):
@@ -171,10 +175,11 @@ class DeviceSimulator:
         self.profile     = generate_profile()
         self.state       = normal_state()
 
-        self.uptime      = 0
-        self.phase       = 'warmup'
-        self.mode        = None
-        self.warmup_left = random.randint(70, 130) * TICK
+        self.uptime        = 0
+        self.phase         = 'warmup'
+        self.mode          = None
+        self.warmup_left   = random.randint(70, 130) * TICK
+        self.failure_ticks = 0  # licznik ticków w fazie failure
 
         self.pseudo_active   = False
         self.pseudo_type     = None
@@ -196,12 +201,15 @@ class DeviceSimulator:
         elif self.phase == 'anomaly':
             self.state = tick_state(self.state, self.mode, self.profile)
             if detect_fault(self.state, self.mode):
-                self.phase = 'failure'
+                self.phase         = 'failure'
+                self.failure_ticks = 0
                 log.warning("Device %s → FAILURE %s", self.id, self.mode)
 
         elif self.phase == 'failure':
             self.state = tick_state(self.state, self.mode, self.profile)
-            self._service()
+            self.failure_ticks += 1
+            if self.failure_ticks >= FAILURE_TICKS_MIN:
+                self._service()
 
         elif self.phase == 'normal_long':
             self.state = tick_state(self.state, 'NONE', self.profile)
@@ -231,7 +239,7 @@ class DeviceSimulator:
 
         return {
             'device_id':      self.id,
-            'ml_score': 0.0,   # ← dodaj tę linię
+            'ml_score':       0.0,
             'session_id':     self.session_id,
             'lat':            self.lat,
             'lng':            self.lng,
@@ -248,14 +256,16 @@ class DeviceSimulator:
         }
 
     def _service(self):
-        log.info("Device %s → SERVICE resolved=%s", self.id, self.mode)
-        self.session_id  = str(uuid.uuid4())
-        self.profile     = generate_profile()
-        self.state       = normal_state()
-        self.uptime      = 0
-        self.phase       = 'warmup'
-        self.warmup_left = random.randint(70, 130) * TICK
-        self.mode        = None
+        log.info("Device %s → SERVICE resolved=%s after %d failure ticks",
+                 self.id, self.mode, self.failure_ticks)
+        self.session_id    = str(uuid.uuid4())
+        self.profile       = generate_profile()
+        self.state         = normal_state()
+        self.uptime        = 0
+        self.phase         = 'warmup'
+        self.warmup_left   = random.randint(70, 130) * TICK
+        self.mode          = None
+        self.failure_ticks = 0
 
     def service_payload(self):
         return {
@@ -311,6 +321,8 @@ def main():
              len(DEVICES), SERVER_URL, TICK)
     log.info("Fault types: %s", FAULT_TYPES)
     log.info("Temps in Celsius | vibration in mm/s RMS")
+    log.info("Failure hold: %d ticks = %ds before SERVICE",
+             FAILURE_TICKS_MIN, FAILURE_TICKS_MIN * TICK)
 
     devices = [DeviceSimulator(d) for d in DEVICES]
 
