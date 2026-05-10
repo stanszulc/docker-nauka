@@ -113,8 +113,8 @@ def generate_profile():
     return {
         'vib_rate':  rv(0.20,  0.15),
         'rpm_rate':  rv(2.0,   0.15),
-        'torq_rate': rv(0.80,  0.15),
-        'temp_rate': rv(0.60,  0.15),
+        'torq_rate': rv(0.2,  0.15),
+        'temp_rate': rv(0.3,  0.15),
     }
 
 
