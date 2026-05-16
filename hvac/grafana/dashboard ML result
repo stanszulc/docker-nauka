@@ -101,7 +101,7 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "WITH failures AS (\n  SELECT device_id, ts AS failure_ts\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics \n    WHERE device_id LIKE 'SIM_%'\n    AND ts > NOW() - INTERVAL '3 hours') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n),\npre AS (\n  SELECT m.is_pre_failure FROM hvac_metrics m\n  JOIN failures f ON m.device_id = f.device_id\n    AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\n  WHERE m.failure_type = 'None'\n  AND m.uptime_seconds > 600\n)\nSELECT NOW() AS time,\n  ROUND((SUM(is_pre_failure::float)/NULLIF(COUNT(*),0))::numeric, 3) AS \"Recall\"\nFROM pre",
+          "rawSql": "WITH failures AS (\n  SELECT device_id, ts AS failure_ts\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics \n    WHERE device_id LIKE 'SIM_%'\n    AND ts > NOW() - INTERVAL '3 hours') t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n),\npre AS (\n  SELECT m.is_pre_failure FROM hvac_metrics m\n  JOIN failures f ON m.device_id = f.device_id\n    AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\n  WHERE (m.failure_type = 'None' OR m.failure_type != 'None')\n  AND m.uptime_seconds > 600\n)\nSELECT NOW() AS time,\n  ROUND((SUM(is_pre_failure::float)/NULLIF(COUNT(*),0))::numeric, 3) AS \"Recall\"\nFROM pre",
           "refId": "A",
           "sql": {
             "columns": [
@@ -589,8 +589,25 @@
           "editorMode": "code",
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "WITH failures AS (\n  SELECT device_id, ts AS failure_ts\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics \n    WHERE device_id LIKE 'SIM_%'\n    AND ts BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz) t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n),\npre AS (\n  SELECT m.is_pre_failure FROM hvac_metrics m\n  JOIN failures f ON m.device_id = f.device_id\n    AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\n  WHERE m.failure_type = 'None'\n  AND m.uptime_seconds > 600\n)\nSELECT NOW() AS time,\n  ROUND((SUM(is_pre_failure::float)/NULLIF(COUNT(*),0))::numeric, 3) AS \"Recall\"\nFROM pre",
-          "refId": "A"
+          "rawSql": "WITH failures AS (\n  SELECT device_id, ts AS failure_ts\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics \n    WHERE device_id LIKE 'SIM_%'\n    AND ts BETWEEN $__timeFrom()::timestamptz AND $__timeTo()::timestamptz) t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n),\npre AS (\n  SELECT m.is_pre_failure FROM hvac_metrics m\n  JOIN failures f ON m.device_id = f.device_id\n    AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\n  WHERE m.uptime_seconds > 600\n)\nSELECT NOW() AS time,\n  ROUND((SUM(is_pre_failure::float)/NULLIF(COUNT(*),0))::numeric, 3) AS \"Recall\"\nFROM pre",
+          "refId": "A",
+          "sql": {
+            "columns": [
+              {
+                "parameters": [],
+                "type": "function"
+              }
+            ],
+            "groupBy": [
+              {
+                "property": {
+                  "type": "string"
+                },
+                "type": "groupBy"
+              }
+            ],
+            "limit": 50
+          }
         }
       ],
       "title": "Recall (czułość)",
@@ -988,7 +1005,7 @@
       "type": "stat"
     },
     {
-      "collapsed": false,
+      "collapsed": true,
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1207,7 +1224,7 @@
           "editorMode": "code",
           "format": "table",
           "rawQuery": true,
-          "rawSql": "WITH failures AS (\n  SELECT device_id, ts AS failure_ts, failure_type\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%'\n    AND ts BETWEEN $__timeFrom() AND $__timeTo()) t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n)\nSELECT \n  f.failure_type AS \"Typ awarii\",\n  COUNT(*) AS \"Próbki (10min okno)\",\n  SUM(m.is_pre_failure) AS \"Wykryte (TP)\",\n  COUNT(*) - SUM(m.is_pre_failure) AS \"Pominięte (FN)\",\n  ROUND((SUM(m.is_pre_failure::float)/NULLIF(COUNT(*),0))::numeric, 3) AS \"Recall\",\n  ROUND(AVG(m.fail_probability)::numeric, 3) AS \"Avg probability\",\n  ROUND(AVG(EXTRACT(EPOCH FROM (f.failure_ts - m.ts)))::numeric, 0) AS \"Avg lead time (s)\"\nFROM hvac_metrics m\nJOIN failures f ON m.device_id = f.device_id\n  AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\nWHERE m.failure_type = 'None'\nAND m.uptime_seconds > 600\nGROUP BY f.failure_type\nORDER BY \"Recall\" DESC",
+          "rawSql": "WITH failures AS (\n  SELECT device_id, ts AS failure_ts, failure_type\n  FROM (SELECT device_id, ts, failure_type,\n    LAG(failure_type) OVER (PARTITION BY device_id ORDER BY ts) AS prev\n    FROM hvac_metrics WHERE device_id LIKE 'SIM_%'\n    AND ts BETWEEN $__timeFrom() AND $__timeTo()) t\n  WHERE failure_type != 'None' AND (prev = 'None' OR prev IS NULL)\n)\nSELECT \n  f.failure_type AS \"Typ awarii\",\n  COUNT(*) AS \"Próbki (10min okno)\",\n  SUM(m.is_pre_failure) AS \"Wykryte (TP)\",\n  COUNT(*) - SUM(m.is_pre_failure) AS \"Pominięte (FN)\",\n  ROUND((SUM(m.is_pre_failure::float)/NULLIF(COUNT(*),0))::numeric, 3) AS \"Recall\",\n  ROUND(AVG(m.fail_probability)::numeric, 3) AS \"Avg probability\",\n  ROUND(AVG(EXTRACT(EPOCH FROM (f.failure_ts - m.ts)))::numeric, 0) AS \"Avg lead time (s)\"\nFROM hvac_metrics m\nJOIN failures f ON m.device_id = f.device_id\n  AND m.ts BETWEEN f.failure_ts - INTERVAL '10 minutes' AND f.failure_ts\nWHERE (m.failure_type = 'None' OR m.failure_type = f.failure_type)\nAND m.uptime_seconds > 600\nGROUP BY f.failure_type\nORDER BY \"Recall\" DESC",
           "refId": "A",
           "sql": {
             "columns": [
@@ -1711,7 +1728,7 @@
     }
   ],
   "preload": false,
-  "refresh": "1h",
+  "refresh": "5m",
   "schemaVersion": 40,
   "tags": [
     "hvac",
@@ -1722,7 +1739,7 @@
     "list": []
   },
   "time": {
-    "from": "now-1h",
+    "from": "now-30m",
     "to": "now"
   },
   "timepicker": {
