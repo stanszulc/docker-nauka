@@ -76,7 +76,7 @@ DEVICES = [
         'lat': round(50.0521 + (i - 1) * 0.007 + random.uniform(-0.003, 0.003), 4),
         'lng': round(19.9345 + (i - 1) * 0.005 + random.uniform(-0.003, 0.003), 4),
     }
-    for i in range(1, 36)
+    for i in range(1, 26)
 ]
 
 # ── Czas w fazie failure przed SERVICE ───────────────────────────────────────
