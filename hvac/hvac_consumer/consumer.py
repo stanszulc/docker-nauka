@@ -55,7 +55,7 @@ BASE_SENSORS = [
 
 # ── Progi fizyczne ────────────────────────────────────────────────────────────
 FAULT_THRESHOLDS = {
-    'vibration_high': 7.1,
+    'vibration_high': 0.75,
     'rpm_high':       2000,
     'rpm_low':        1000,
     'torque_high':    65,
@@ -64,7 +64,7 @@ FAULT_THRESHOLDS = {
 }
 
 PRE_ALARM_THRESHOLDS = {
-    'vibration_high': 2.5,
+    'vibration_high': 0.35,
     'rpm_high':       1700,
     'rpm_low':        1300,
     'torque_high':    49,
