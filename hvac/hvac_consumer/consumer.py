@@ -1,9 +1,10 @@
 """
 hvac_consumer v5 — Single-event ML Consumer
 Zmiany vs v4s:
-- build_features zgodny z src/features.py (model v8)
+- build_features zgodny z src/features.py (model v11)
 - Dodane: baseline_delta, above_threshold, margins, pre_alarm, escalation
-- is_close_to_fault, min_margin_to_fault
+- Dodane: vibration_acceleration, vibration_relative_rate, vibration_max_short/mid, vibration_trend_up
+- is_close_to_fault = 0 (wyłączone — powodowało FP)
 - Usunięte: uptime_norm (nie ma w v8)
 """
 
@@ -55,7 +56,7 @@ BASE_SENSORS = [
 
 # ── Progi fizyczne ────────────────────────────────────────────────────────────
 FAULT_THRESHOLDS = {
-    'vibration_high': 7.5,
+    'vibration_high': 7.1,
     'rpm_high':       2000,
     'rpm_low':        1000,
     'torque_high':    65,
@@ -136,56 +137,49 @@ CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type ON hvac_alerts_log (event_
 # ── Per-device rolling buffer ─────────────────────────────────────────────────
 class DeviceBuffer:
     def __init__(self):
-        # Rolling buffers per sensor
         self.bufs   = {s: deque(maxlen=WIN_LONG) for s in BASE_SENSORS}
         self.step   = 0
 
-        # Baseline (pierwsze BASELINE_LEN ticków)
         self.baseline        = {}
         self.baseline_counts = {s: 0 for s in BASE_SENSORS}
         self.baseline_sums   = {s: 0.0 for s in BASE_SENSORS}
         self.baseline_frozen = False
 
-        # Velocity (poprzednia wartość)
         self.prev = {s: None for s in ['proc_temp', 'rpm', 'torque', 'vibration']}
 
-        # Pre-alarm cumsums
         self.cumsum = {
             'vib': 0, 'rpm_high': 0, 'rpm_low': 0,
             'torque_high': 0, 'torque_low': 0, 'temp': 0,
         }
 
-        # Escalation buffer (ostatnie 5 wartości)
         self.esc_bufs = {s: deque(maxlen=6) for s in
                          ['vibration', 'torque', 'rpm', 'proc_temp']}
 
+        # Escalation history dla acceleration (ostatnie 6 wartości escalation)
+        self.vib_esc_history = deque(maxlen=6)
+
     def push(self, sensor_row: dict):
-        fa = FAULT_THRESHOLDS
         pa = PRE_ALARM_THRESHOLDS
 
         for s in BASE_SENSORS:
             val = float(sensor_row.get(s, 0.0))
             self.bufs[s].append(val)
 
-            # Baseline
             if not self.baseline_frozen:
                 self.baseline_sums[s]   += val
                 self.baseline_counts[s] += 1
 
-        # Freeze baseline po BASELINE_LEN tickach
         if not self.baseline_frozen and self.step >= BASELINE_LEN - 1:
             for s in BASE_SENSORS:
                 n = self.baseline_counts[s]
                 self.baseline[s] = self.baseline_sums[s] / n if n > 0 else 0.0
             self.baseline_frozen = True
 
-        # Velocity
         for s in ['proc_temp', 'rpm', 'torque', 'vibration']:
             val = float(sensor_row.get(s, 0.0))
             self.esc_bufs[s].append(val)
             self.prev[s] = val
 
-        # Pre-alarm cumsums
         vib    = float(sensor_row.get('vibration', 0.0))
         rpm    = float(sensor_row.get('rpm', 1500.0))
         torque = float(sensor_row.get('torque', 40.0))
@@ -238,12 +232,11 @@ class DeviceBuffer:
             feats[f'{s}_trend_ml']  = mid   - long_
             feats[f'{s}_std_mid']   = std_mid
 
-        # Velocity diff(5) — uproszczony jako diff ostatniej i pierwszej w buforze
+        # Velocity diff(5)
         for s in ['proc_temp', 'rpm', 'torque', 'vibration']:
             buf = list(self.esc_bufs[s])
             vel = (buf[-1] - buf[0]) / max(len(buf) - 1, 1) if len(buf) >= 2 else 0.0
             feats[f'{s}_velocity'] = vel
-            # Rolling velocity
             feats[f'{s}_velocity_ma_short'] = vel
             feats[f'{s}_velocity_std_mid']  = 0.0
 
@@ -298,7 +291,7 @@ class DeviceBuffer:
             feats['margin_rpm_high_fault'],    feats['margin_rpm_low_fault'],
         ]
         feats['min_margin_to_fault'] = min(margins)
-        feats['is_close_to_fault']   = int(feats['min_margin_to_fault'] < 5)
+        feats['is_close_to_fault']   = 0  # wyłączone — powodowało FP
 
         # Instability
         feats['thermal_instability']    = feats['proc_temp_std_mid'] * feats.get('delta_temp_std_mid', 0.0)
@@ -330,15 +323,16 @@ class DeviceBuffer:
         feats['rpm_escalation']       = self._escalation('rpm')
         feats['proc_temp_escalation'] = self._escalation('proc_temp')
 
-        # Interaction features
-        feats['vibration_x_proc_temp']          = feats['vibration'] * feats['proc_temp']
-        feats['rpm_x_torque']                   = feats['rpm']       * feats['torque']
-        feats['vibration_x_proc_temp_ma_short'] = feats['vibration_x_proc_temp']
-        feats['vibration_x_proc_temp_ma_mid']   = feats['vibration_x_proc_temp']
-        feats['vibration_x_proc_temp_std_mid']  = 0.0
-        feats['rpm_x_torque_ma_short']          = feats['rpm_x_torque']
-        feats['rpm_x_torque_ma_mid']            = feats['rpm_x_torque']
-        feats['rpm_x_torque_std_mid']           = 0.0
+        # Vibration rate features (nowe w v11)
+        vib_esc = feats['vibration_escalation']
+        self.vib_esc_history.append(vib_esc)
+        vib_esc_hist = list(self.vib_esc_history)
+        feats['vibration_acceleration']  = (vib_esc_hist[-1] - vib_esc_hist[0]) / max(len(vib_esc_hist) - 1, 1) if len(vib_esc_hist) >= 2 else 0.0
+        feats['vibration_relative_rate'] = vib_esc / (feats['vibration'] + 1e-3)
+        buf_vib = list(self.bufs['vibration'])
+        feats['vibration_max_short'] = max(buf_vib[-WIN_SHORT:]) if len(buf_vib) >= WIN_SHORT else (max(buf_vib) if buf_vib else 0.0)
+        feats['vibration_max_mid']   = max(buf_vib[-WIN_MID:])   if len(buf_vib) >= WIN_MID   else (max(buf_vib) if buf_vib else 0.0)
+        feats['vibration_trend_up']  = feats['vibration'] - feats['vibration_ma_long']
 
         return feats
 
@@ -392,7 +386,6 @@ def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
         device_id = event["device_id"]
         buf       = get_or_create_buffer(device_id)
 
-        # Policz pochodne fizyczne
         proc_temp = float(event.get("proc_temp", 60.0))
         air_temp  = float(event.get("air_temp",  300.0))
         rpm       = float(event.get("rpm",       1500))
@@ -404,13 +397,13 @@ def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
         ltr   = power / (abs(dT) + 1e-3)
 
         sensor_row = {
-            'air_temp':          air_temp,
-            'proc_temp':         proc_temp,
-            'rpm':               rpm,
-            'torque':            torque,
-            'vibration':         vibration,
-            'delta_temp':        dT,
-            'power_w':           power,
+            'air_temp':           air_temp,
+            'proc_temp':          proc_temp,
+            'rpm':                rpm,
+            'torque':             torque,
+            'vibration':          vibration,
+            'delta_temp':         dT,
+            'power_w':            power,
             'load_to_temp_ratio': ltr,
         }
         buf.push(sensor_row)
