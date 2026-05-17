@@ -55,7 +55,7 @@ BASE_SENSORS = [
 
 # ── Progi fizyczne ────────────────────────────────────────────────────────────
 FAULT_THRESHOLDS = {
-    'vibration_high': 7,5,
+    'vibration_high': 7.5,
     'rpm_high':       2000,
     'rpm_low':        1000,
     'torque_high':    65,
