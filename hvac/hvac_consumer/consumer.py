@@ -1,11 +1,9 @@
 """
-hvac_consumer v5 — Single-event ML Consumer
-Zmiany vs v4s:
-- build_features zgodny z src/features.py (model v11)
-- Dodane: baseline_delta, above_threshold, margins, pre_alarm, escalation
-- Dodane: vibration_acceleration, vibration_relative_rate, vibration_max_short/mid, vibration_trend_up
-- is_close_to_fault = 0 (wyłączone — powodowało FP)
-- Usunięte: uptime_norm (nie ma w v8)
+hvac_consumer v6 — Single-event ML Consumer + RUL
+Zmiany vs v5:
+- Dodany model RUL (hvac_rul_model_v1.pkl) równolegle do klasyfikatora
+- rul_seconds zapisywany do hvac_metrics gdy is_pre_failure=1
+- Nowa zmienna środowiskowa RUL_MODEL_PATH
 """
 
 import os
@@ -31,6 +29,7 @@ TOPIC_STATUS     = os.getenv("TOPIC_STATUS",     "hvac_status")
 CONSUMER_GROUP   = os.getenv("CONSUMER_GROUP",   "hvac_ml_group")
 POSTGRES_DSN     = os.getenv("POSTGRES_DSN",     "postgresql://kafka:kafka@postgres:5432/events")
 MODEL_PATH       = os.getenv("MODEL_PATH",       "/app/model/hvac_rf_model.pkl")
+RUL_MODEL_PATH   = os.getenv("RUL_MODEL_PATH",   "/app/model/hvac_rul_model_v1.pkl")
 ALERT_THRESHOLD  = float(os.getenv("ALERT_THRESHOLD",  "0.5"))
 CONSECUTIVE_MIN  = int(os.getenv("CONSECUTIVE_MIN",    "1"))
 RETENTION_HOURS  = int(os.getenv("RETENTION_HOURS",    "168"))
@@ -100,6 +99,7 @@ ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS is_pre_failure   SMALLINT DEFA
 ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS fail_probability REAL;
 ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS uptime_seconds   REAL;
 ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS session_id       VARCHAR(36);
+ALTER TABLE hvac_metrics ADD COLUMN IF NOT EXISTS rul_seconds      REAL;
 
 CREATE TABLE IF NOT EXISTS hvac_alerts_log (
     id               BIGSERIAL    PRIMARY KEY,
@@ -155,7 +155,6 @@ class DeviceBuffer:
         self.esc_bufs = {s: deque(maxlen=6) for s in
                          ['vibration', 'torque', 'rpm', 'proc_temp']}
 
-        # Escalation history dla acceleration (ostatnie 6 wartości escalation)
         self.vib_esc_history = deque(maxlen=6)
 
     def push(self, sensor_row: dict):
@@ -217,12 +216,10 @@ class DeviceBuffer:
         pa = PRE_ALARM_THRESHOLDS
         feats = {}
 
-        # Raw sensors
         for s in BASE_SENSORS:
             buf = list(self.bufs[s])
             feats[s] = float(buf[-1]) if buf else 0.0
 
-        # Rolling per BASE_SENSORS
         for s in BASE_SENSORS:
             short, mid, long_, std_mid = self._rolling(s)
             feats[f'{s}_ma_short']  = short
@@ -232,7 +229,6 @@ class DeviceBuffer:
             feats[f'{s}_trend_ml']  = mid   - long_
             feats[f'{s}_std_mid']   = std_mid
 
-        # Velocity diff(5)
         for s in ['proc_temp', 'rpm', 'torque', 'vibration']:
             buf = list(self.esc_bufs[s])
             vel = (buf[-1] - buf[0]) / max(len(buf) - 1, 1) if len(buf) >= 2 else 0.0
@@ -240,7 +236,6 @@ class DeviceBuffer:
             feats[f'{s}_velocity_ma_short'] = vel
             feats[f'{s}_velocity_std_mid']  = 0.0
 
-        # Baseline delta
         bl = self.baseline if self.baseline_frozen else {s: feats[s] for s in BASE_SENSORS}
         feats['rpm_delta_baseline']       = feats['rpm']       - bl.get('rpm', feats['rpm'])
         feats['vibration_delta_baseline'] = feats['vibration'] - bl.get('vibration', feats['vibration'])
@@ -253,7 +248,6 @@ class DeviceBuffer:
             feats[f'{s}_ma_short'] = feats[s]
             feats[f'{s}_ma_mid']   = feats[s]
 
-        # Above/below threshold
         feats['vibration_above_prealarm'] = max(0.0, feats['vibration'] - pa['vibration_high'])
         feats['vibration_above_failure']  = max(0.0, feats['vibration'] - fa['vibration_high'])
         feats['rpm_above_prealarm']       = max(0.0, feats['rpm']       - pa['rpm_high'])
@@ -267,13 +261,11 @@ class DeviceBuffer:
         feats['temp_above_prealarm']      = max(0.0, feats['proc_temp'] - pa['temp_high'])
         feats['temp_above_failure']       = max(0.0, feats['proc_temp'] - fa['temp_high'])
 
-        # Buffer fill
         n = self.step
         feats['buffer_fill_short'] = min(1.0, n / WIN_SHORT)
         feats['buffer_fill_mid']   = min(1.0, n / WIN_MID)
         feats['buffer_fill_long']  = min(1.0, n / WIN_LONG)
 
-        # Margins
         feats['hdf_margin']               = feats['delta_temp'] - 8.6
         feats['pwf_low']                  = feats['power_w'] - 3500
         feats['pwf_high']                 = 9000 - feats['power_w']
@@ -291,14 +283,12 @@ class DeviceBuffer:
             feats['margin_rpm_high_fault'],    feats['margin_rpm_low_fault'],
         ]
         feats['min_margin_to_fault'] = min(margins)
-        feats['is_close_to_fault']   = 0  # wyłączone — powodowało FP
+        feats['is_close_to_fault']   = 0
 
-        # Instability
         feats['thermal_instability']    = feats['proc_temp_std_mid'] * feats.get('delta_temp_std_mid', 0.0)
         feats['mechanical_instability'] = feats['vibration_std_mid'] * feats['torque_std_mid']
         feats['load_ratio_trend']       = feats['load_to_temp_ratio_trend_sl']
 
-        # Pre-alarm binary + cumsum
         vib    = feats['vibration']
         rpm    = feats['rpm']
         torque = feats['torque']
@@ -317,13 +307,11 @@ class DeviceBuffer:
         feats['in_pre_alarm_temp']               = int(temp   > pa['temp_high'])
         feats['in_pre_alarm_temp_cumsum']        = self.cumsum['temp']
 
-        # Escalation
         feats['vibration_escalation'] = self._escalation('vibration')
         feats['torque_escalation']    = self._escalation('torque')
         feats['rpm_escalation']       = self._escalation('rpm')
         feats['proc_temp_escalation'] = self._escalation('proc_temp')
 
-        # Vibration rate features (nowe w v11)
         vib_esc = feats['vibration_escalation']
         self.vib_esc_history.append(vib_esc)
         vib_esc_hist = list(self.vib_esc_history)
@@ -370,18 +358,23 @@ def load_model(path: str):
         log.warning("Model not found at %s", path)
         return None
     bundle = joblib.load(path)
-    log.info("Model loaded: %s | version=%s features=%d threshold=%.2f",
+    log.info("Model loaded: %s | version=%s features=%d",
              path, bundle.get('version', '?'),
-             len(bundle.get('feature_cols', [])),
-             bundle.get('threshold', 0.5))
+             len(bundle.get('feature_cols', [])))
     return bundle
 
 
-def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
+def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
+    """
+    Zwraca: (ml_score, failure_type, is_pre_failure, fail_prob, rul_seconds)
+    rul_seconds = None gdy brak alarmu lub brak modelu RUL
+    """
     failure_type = event.get("failure_type", "None")
     app_score    = event.get("ml_score", 0.0)
-    if bundle is None:
-        return app_score, failure_type, 0, app_score
+
+    if bundle_clf is None:
+        return app_score, failure_type, 0, app_score, None
+
     try:
         device_id = event["device_id"]
         buf       = get_or_create_buffer(device_id)
@@ -408,19 +401,32 @@ def infer(bundle, event: dict, uptime_seconds: float) -> tuple:
         }
         buf.push(sensor_row)
         feats     = buf.build_features(uptime_seconds)
-        feat_cols = bundle['feature_cols']
+        feat_cols = bundle_clf['feature_cols']
         X         = np.array([[feats.get(c, 0.0) for c in feat_cols]])
 
-        proba              = bundle['model'].predict_proba(X)[0]
+        proba              = bundle_clf['model'].predict_proba(X)[0]
         fail_prob          = float(proba[1])
-        threshold          = float(os.getenv("ALERT_THRESHOLD", str(bundle.get("threshold", 0.5))))
+        threshold          = float(os.getenv("ALERT_THRESHOLD", str(bundle_clf.get("threshold", 0.5))))
         is_pre_failure_raw = 1 if fail_prob >= threshold else 0
         is_pre_failure     = update_streak(device_id, is_pre_failure_raw)
 
-        return round(fail_prob, 4), failure_type, is_pre_failure, round(fail_prob, 4)
+        # ── RUL prediction ────────────────────────────────────
+        rul_seconds = None
+        if is_pre_failure and bundle_rul is not None:
+            try:
+                rul_feat_cols = bundle_rul['feature_cols']
+                X_rul         = np.array([[feats.get(c, 0.0) for c in rul_feat_cols]])
+                rul_raw       = float(bundle_rul['model'].predict(X_rul)[0])
+                max_rul       = bundle_rul.get('max_rul', 1200)
+                rul_seconds   = round(float(np.clip(rul_raw, 0, max_rul)), 1)
+            except Exception as e:
+                log.warning("RUL inference error: %s", e)
+
+        return round(fail_prob, 4), failure_type, is_pre_failure, round(fail_prob, 4), rul_seconds
+
     except Exception as e:
         log.error("Inference error: %s", e)
-        return app_score, failure_type, 0, app_score
+        return app_score, failure_type, 0, app_score, None
 
 
 def score_to_severity(score: float) -> str:
@@ -469,7 +475,7 @@ def reset_uptime(device_id: str):
 
 
 def save_event(conn, event: dict, ml_score, failure_type, is_pre_failure,
-               fail_prob, uptime, severity):
+               fail_prob, uptime, severity, rul_seconds):
     device_id = event.get("device_id", "unknown")
     ts_val    = event.get("ts", datetime.now(timezone.utc).isoformat())
     try:
@@ -479,8 +485,9 @@ def save_event(conn, event: dict, ml_score, failure_type, is_pre_failure,
                   (device_id, ts, lat, lng,
                    air_temp, proc_temp, rpm, torque, vibration,
                    ml_score, failure_type, severity, app_severity,
-                   is_pre_failure, fail_probability, uptime_seconds, session_id)
-                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+                   is_pre_failure, fail_probability, uptime_seconds,
+                   session_id, rul_seconds)
+                VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """, (
                 device_id, ts_val,
                 event.get("lat"), event.get("lng"),
@@ -490,6 +497,7 @@ def save_event(conn, event: dict, ml_score, failure_type, is_pre_failure,
                 event.get("severity", "OK"),
                 is_pre_failure, fail_prob,
                 round(uptime, 1), event.get("session_id"),
+                rul_seconds,
             ))
 
             cur.execute("""
@@ -557,7 +565,7 @@ def ensure_topics():
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    log.info("hvac_consumer v5 | kafka=%s group=%s", KAFKA_BOOTSTRAP, CONSUMER_GROUP)
+    log.info("hvac_consumer v6 | kafka=%s group=%s", KAFKA_BOOTSTRAP, CONSUMER_GROUP)
 
     running = True
     def handle_signal(sig, frame):
@@ -567,9 +575,18 @@ def main():
     signal.signal(signal.SIGTERM, handle_signal)
     signal.signal(signal.SIGINT,  handle_signal)
 
-    conn  = connect_postgres()
+    conn       = connect_postgres()
     ensure_schema(conn)
-    model = load_model(MODEL_PATH)
+    bundle_clf = load_model(MODEL_PATH)
+    bundle_rul = load_model(RUL_MODEL_PATH)
+
+    if bundle_rul is None:
+        log.warning("RUL model not found — rul_seconds will be NULL")
+    else:
+        log.info("RUL model loaded | version=%s RMSE=%.1fs MAE=%.1fs",
+                 bundle_rul.get('version', '?'),
+                 bundle_rul.get('rmse', 0),
+                 bundle_rul.get('mae', 0))
 
     for attempt in range(10):
         try:
@@ -634,19 +651,20 @@ def main():
                         else:
                             uptime = get_uptime(device_id)
 
-                        ml_score, failure_type, is_pre_failure, fail_prob = \
-                            infer(model, event, uptime)
+                        ml_score, failure_type, is_pre_failure, fail_prob, rul_seconds = \
+                            infer(bundle_clf, bundle_rul, event, uptime)
                         severity = score_to_severity(ml_score)
 
                         save_event(conn, event, ml_score, failure_type,
-                                   is_pre_failure, fail_prob, uptime, severity)
+                                   is_pre_failure, fail_prob, uptime,
+                                   severity, rul_seconds)
 
                         if is_pre_failure:
+                            rul_str = f"{rul_seconds:.0f}s" if rul_seconds is not None else "N/A"
                             log.warning(
-                                "PRE-FAILURE | device=%s prob=%.2f streak=%d "
+                                "PRE-FAILURE | device=%s prob=%.2f rul=%s "
                                 "failure=%s uptime=%.0fs",
-                                device_id, fail_prob,
-                                DEVICE_STREAK.get(device_id, 0),
+                                device_id, fail_prob, rul_str,
                                 failure_type, uptime,
                             )
 
