@@ -1,10 +1,10 @@
 """
-hvac_consumer v6 — Single-event ML Consumer + RUL + Warm Start
-Zmiany vs v5:
-- Dodany model RUL (hvac_rul_model_v1.pkl) równolegle do klasyfikatora
-- rul_seconds zapisywany do hvac_metrics gdy is_pre_failure=1
-- Warm start — nowe urządzenie wypełnia buffer pierwszym eventem (brak FP przy cold start)
-- Nowa zmienna środowiskowa RUL_MODEL_PATH
+hvac_consumer v7 — XGBoost Classifier + LSTM RUL
+Zmiany vs v6:
+- Model RUL: XGBoost → LSTM (PyTorch)
+- LSTM używa sekwencji 60 ostatnich ticków z DeviceBuffer
+- Scaler i feature_cols załadowane z bundle .pt
+- Warm start nadal aktywny
 """
 
 import os
@@ -22,6 +22,9 @@ import psycopg2
 from confluent_kafka import Consumer, KafkaError
 from confluent_kafka.admin import AdminClient, NewTopic
 
+import torch
+import torch.nn as nn
+
 # ── Config ────────────────────────────────────────────────────────────────────
 KAFKA_BOOTSTRAP  = os.getenv("KAFKA_BOOTSTRAP",  "kafka:9092")
 TOPIC_TELEMETRY  = os.getenv("TOPIC_TELEMETRY",  "hvac_telemetry")
@@ -30,7 +33,7 @@ TOPIC_STATUS     = os.getenv("TOPIC_STATUS",     "hvac_status")
 CONSUMER_GROUP   = os.getenv("CONSUMER_GROUP",   "hvac_ml_group")
 POSTGRES_DSN     = os.getenv("POSTGRES_DSN",     "postgresql://kafka:kafka@postgres:5432/events")
 MODEL_PATH       = os.getenv("MODEL_PATH",       "/app/model/hvac_rf_model.pkl")
-RUL_MODEL_PATH   = os.getenv("RUL_MODEL_PATH",   "/app/model/hvac_rul_model_v1.pkl")
+RUL_MODEL_PATH   = os.getenv("RUL_MODEL_PATH",   "/app/model/hvac_rul_lstm_v1.pt")
 ALERT_THRESHOLD  = float(os.getenv("ALERT_THRESHOLD",  "0.5"))
 CONSECUTIVE_MIN  = int(os.getenv("CONSECUTIVE_MIN",    "1"))
 RETENTION_HOURS  = int(os.getenv("RETENTION_HOURS",    "168"))
@@ -54,7 +57,6 @@ BASE_SENSORS = [
     'delta_temp', 'power_w', 'load_to_temp_ratio',
 ]
 
-# ── Progi fizyczne ────────────────────────────────────────────────────────────
 FAULT_THRESHOLDS = {
     'vibration_high': 7.1,
     'rpm_high':       2000,
@@ -136,6 +138,31 @@ CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type ON hvac_alerts_log (event_
 CREATE INDEX IF NOT EXISTS idx_hvac_metrics_rul       ON hvac_metrics (device_id, ts DESC) WHERE rul_seconds IS NOT NULL;
 """
 
+# ── LSTM Model definition ─────────────────────────────────────────────────────
+class LSTMRegressor(nn.Module):
+    def __init__(self, input_size, hidden_size, num_layers, dropout):
+        super().__init__()
+        self.lstm = nn.LSTM(
+            input_size=input_size,
+            hidden_size=hidden_size,
+            num_layers=num_layers,
+            batch_first=True,
+            dropout=dropout if num_layers > 1 else 0,
+        )
+        self.dropout = nn.Dropout(dropout)
+        self.fc1     = nn.Linear(hidden_size, 64)
+        self.relu    = nn.ReLU()
+        self.fc2     = nn.Linear(64, 1)
+
+    def forward(self, x):
+        out, _ = self.lstm(x)
+        out    = out[:, -1, :]
+        out    = self.dropout(out)
+        out    = self.relu(self.fc1(out))
+        out    = self.fc2(out)
+        return out.squeeze(1)
+
+
 # ── Per-device rolling buffer ─────────────────────────────────────────────────
 class DeviceBuffer:
     def __init__(self):
@@ -154,17 +181,17 @@ class DeviceBuffer:
             'torque_high': 0, 'torque_low': 0, 'temp': 0,
         }
 
-        self.esc_bufs = {s: deque(maxlen=6) for s in
-                         ['vibration', 'torque', 'rpm', 'proc_temp']}
-
+        self.esc_bufs        = {s: deque(maxlen=6) for s in ['vibration', 'torque', 'rpm', 'proc_temp']}
         self.vib_esc_history = deque(maxlen=6)
 
+        # Historia features dla LSTM — trzyma ostatnie WIN_LONG snapshots
+        self.feature_history = deque(maxlen=WIN_LONG)
+
     def warm_start(self, sensor_row: dict):
-        """Wypełnia buffer syntetycznie pierwszym eventem — eliminuje cold start FP."""
         for _ in range(WIN_LONG):
             self.push(sensor_row)
-        # reset cumsumów — warm start nie powinien naliczać pre-alarmów
         self.cumsum = {k: 0 for k in self.cumsum}
+        self.feature_history.clear()
 
     def push(self, sensor_row: dict):
         pa = PRE_ALARM_THRESHOLDS
@@ -172,7 +199,6 @@ class DeviceBuffer:
         for s in BASE_SENSORS:
             val = float(sensor_row.get(s, 0.0))
             self.bufs[s].append(val)
-
             if not self.baseline_frozen:
                 self.baseline_sums[s]   += val
                 self.baseline_counts[s] += 1
@@ -207,11 +233,11 @@ class DeviceBuffer:
         n   = len(buf)
         if n == 0:
             return 0.0, 0.0, 0.0, 0.0
-        arr      = np.array(buf, dtype=np.float32)
-        short    = float(arr[-WIN_SHORT:].mean()) if n >= WIN_SHORT else float(arr.mean())
-        mid      = float(arr[-WIN_MID:].mean())   if n >= WIN_MID   else float(arr.mean())
-        long_    = float(arr.mean())
-        std_mid  = float(arr[-WIN_MID:].std())    if n >= WIN_MID   else (float(arr.std()) if n > 1 else 0.0)
+        arr     = np.array(buf, dtype=np.float32)
+        short   = float(arr[-WIN_SHORT:].mean()) if n >= WIN_SHORT else float(arr.mean())
+        mid     = float(arr[-WIN_MID:].mean())   if n >= WIN_MID   else float(arr.mean())
+        long_   = float(arr.mean())
+        std_mid = float(arr[-WIN_MID:].std())    if n >= WIN_MID   else (float(arr.std()) if n > 1 else 0.0)
         return short, mid, long_, std_mid
 
     def _escalation(self, sensor: str) -> float:
@@ -241,16 +267,16 @@ class DeviceBuffer:
         for s in ['proc_temp', 'rpm', 'torque', 'vibration']:
             buf = list(self.esc_bufs[s])
             vel = (buf[-1] - buf[0]) / max(len(buf) - 1, 1) if len(buf) >= 2 else 0.0
-            feats[f'{s}_velocity'] = vel
+            feats[f'{s}_velocity']          = vel
             feats[f'{s}_velocity_ma_short'] = vel
             feats[f'{s}_velocity_std_mid']  = 0.0
 
         bl = self.baseline if self.baseline_frozen else {s: feats[s] for s in BASE_SENSORS}
-        feats['rpm_delta_baseline']       = feats['rpm']       - bl.get('rpm', feats['rpm'])
+        feats['rpm_delta_baseline']       = feats['rpm']       - bl.get('rpm',       feats['rpm'])
         feats['vibration_delta_baseline'] = feats['vibration'] - bl.get('vibration', feats['vibration'])
         feats['temp_delta_baseline']      = feats['proc_temp'] - bl.get('proc_temp', feats['proc_temp'])
-        feats['torque_delta_baseline']    = feats['torque']    - bl.get('torque', feats['torque'])
-        feats['power_delta_baseline']     = feats['power_w']   - bl.get('power_w', feats['power_w'])
+        feats['torque_delta_baseline']    = feats['torque']    - bl.get('torque',    feats['torque'])
+        feats['power_delta_baseline']     = feats['power_w']   - bl.get('power_w',   feats['power_w'])
 
         for s in ['rpm_delta_baseline', 'vibration_delta_baseline',
                   'temp_delta_baseline', 'torque_delta_baseline']:
@@ -331,7 +357,20 @@ class DeviceBuffer:
         feats['vibration_max_mid']   = max(buf_vib[-WIN_MID:])   if len(buf_vib) >= WIN_MID   else (max(buf_vib) if buf_vib else 0.0)
         feats['vibration_trend_up']  = feats['vibration'] - feats['vibration_ma_long']
 
+        # Zapisz snapshot do historii LSTM
+        self.feature_history.append(feats)
+
         return feats
+
+    def get_sequence(self, feature_cols: list, seq_len: int) -> np.ndarray:
+        """Zwraca sekwencję [seq_len x features] z historii."""
+        history = list(self.feature_history)
+        if len(history) < seq_len:
+            # pad z pierwszym dostępnym snapshoten
+            pad = [history[0]] * (seq_len - len(history))
+            history = pad + history
+        history = history[-seq_len:]
+        return np.array([[snap.get(c, 0.0) for c in feature_cols] for snap in history], dtype=np.float32)
 
     def reset(self):
         self.__init__()
@@ -343,12 +382,12 @@ DEVICE_UPTIME:  dict = {}
 DEVICE_STREAK:  dict = {}
 
 
-def get_or_create_buffer(device_id: str, sensor_row: dict = None) -> 'DeviceBuffer':
+def get_or_create_buffer(device_id: str, sensor_row: dict = None) -> DeviceBuffer:
     if device_id not in DEVICE_BUFFERS:
         buf = DeviceBuffer()
         if sensor_row is not None:
             buf.warm_start(sensor_row)
-            log.info("Warm start | device=%s | buffer prefilled (%d ticks)", device_id, WIN_LONG)
+            log.info("Warm start | device=%s", device_id)
         DEVICE_BUFFERS[device_id] = buf
     return DEVICE_BUFFERS[device_id]
 
@@ -365,22 +404,45 @@ def reset_streak(device_id: str):
     DEVICE_STREAK[device_id] = 0
 
 
-# ── Model ─────────────────────────────────────────────────────────────────────
-def load_model(path: str):
+# ── Model loading ─────────────────────────────────────────────────────────────
+def load_clf_model(path: str):
     if not os.path.exists(path):
-        log.warning("Model not found at %s", path)
+        log.warning("Classifier not found: %s", path)
         return None
     bundle = joblib.load(path)
-    log.info("Model loaded: %s | version=%s features=%d",
-             path, bundle.get('version', '?'),
-             len(bundle.get('feature_cols', [])))
+    log.info("Classifier loaded: %s | version=%s features=%d",
+             path, bundle.get('version', '?'), len(bundle.get('feature_cols', [])))
     return bundle
 
 
-def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
-    """
-    Zwraca: (ml_score, failure_type, is_pre_failure, fail_prob, rul_seconds)
-    """
+def load_rul_model(path: str):
+    if not os.path.exists(path):
+        log.warning("RUL model not found: %s", path)
+        return None
+    try:
+        checkpoint = torch.load(path, map_location='cpu', weights_only=False)
+        model = LSTMRegressor(
+            input_size  = checkpoint['input_size'],
+            hidden_size = checkpoint['hidden_size'],
+            num_layers  = checkpoint['num_layers'],
+            dropout     = checkpoint['dropout'],
+        )
+        model.load_state_dict(checkpoint['model_state'])
+        model.eval()
+        log.info("LSTM RUL loaded: %s | version=%s seq_len=%d RMSE=%.1fs MAE=%.1fs",
+                 path,
+                 checkpoint.get('version', '?'),
+                 checkpoint.get('seq_len', 60),
+                 checkpoint.get('rmse', 0),
+                 checkpoint.get('mae', 0))
+        return checkpoint  # zwracamy cały checkpoint (zawiera scaler, feature_cols itd.)
+    except Exception as e:
+        log.error("Failed to load RUL model: %s", e)
+        return None
+
+
+# ── Inference ─────────────────────────────────────────────────────────────────
+def infer(bundle_clf, rul_checkpoint, event: dict, uptime_seconds: float) -> tuple:
     failure_type = event.get("failure_type", "None")
     app_score    = event.get("ml_score", 0.0)
 
@@ -401,41 +463,49 @@ def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
         ltr   = power / (abs(dT) + 1e-3)
 
         sensor_row = {
-            'air_temp':           air_temp,
-            'proc_temp':          proc_temp,
-            'rpm':                rpm,
-            'torque':             torque,
-            'vibration':          vibration,
-            'delta_temp':         dT,
-            'power_w':            power,
-            'load_to_temp_ratio': ltr,
+            'air_temp': air_temp, 'proc_temp': proc_temp,
+            'rpm': rpm, 'torque': torque, 'vibration': vibration,
+            'delta_temp': dT, 'power_w': power, 'load_to_temp_ratio': ltr,
         }
 
-        # warm start przy pierwszym evencie nowego urządzenia
-        buf = get_or_create_buffer(device_id, sensor_row)
+        buf   = get_or_create_buffer(device_id, sensor_row)
         buf.push(sensor_row)
+        feats = buf.build_features(uptime_seconds)
 
-        feats     = buf.build_features(uptime_seconds)
-        feat_cols = bundle_clf['feature_cols']
-        X         = np.array([[feats.get(c, 0.0) for c in feat_cols]])
-
-        proba              = bundle_clf['model'].predict_proba(X)[0]
+        # ── Klasyfikator XGBoost ──────────────────────────────
+        feat_cols_clf = bundle_clf['feature_cols']
+        X_clf         = np.array([[feats.get(c, 0.0) for c in feat_cols_clf]])
+        proba              = bundle_clf['model'].predict_proba(X_clf)[0]
         fail_prob          = float(proba[1])
         threshold          = float(os.getenv("ALERT_THRESHOLD", str(bundle_clf.get("threshold", 0.5))))
         is_pre_failure_raw = 1 if fail_prob >= threshold else 0
         is_pre_failure     = update_streak(device_id, is_pre_failure_raw)
 
-        # RUL prediction
+        # ── LSTM RUL ──────────────────────────────────────────
         rul_seconds = None
-        if is_pre_failure and bundle_rul is not None:
+        if is_pre_failure and rul_checkpoint is not None:
             try:
-                rul_feat_cols = bundle_rul['feature_cols']
-                X_rul         = np.array([[feats.get(c, 0.0) for c in rul_feat_cols]])
-                rul_raw       = float(bundle_rul['model'].predict(X_rul)[0])
-                max_rul       = bundle_rul.get('max_rul', 1800)
-                rul_seconds   = round(float(np.clip(rul_raw, 0, max_rul)), 1)
+                feat_cols_rul = rul_checkpoint['feature_cols']
+                seq_len       = rul_checkpoint.get('seq_len', 60)
+                max_rul       = rul_checkpoint.get('max_rul', 1800)
+                scaler        = rul_checkpoint['scaler']
+
+                # pobierz sekwencję z bufora
+                seq = buf.get_sequence(feat_cols_rul, seq_len)  # [seq_len x features]
+
+                # normalizacja
+                seq_2d       = seq.reshape(-1, seq.shape[-1])
+                seq_scaled   = scaler.transform(seq_2d).astype(np.float32)
+                seq_3d       = seq_scaled.reshape(1, seq_len, -1)
+
+                X_rul = torch.tensor(seq_3d, dtype=torch.float32)
+
+                with torch.no_grad():
+                    rul_raw = rul_checkpoint['model_ref'](X_rul).item()
+
+                rul_seconds = round(float(np.clip(rul_raw, 0, max_rul)), 1)
             except Exception as e:
-                log.warning("RUL inference error: %s", e)
+                log.warning("LSTM RUL error: %s", e)
 
         return round(fail_prob, 4), failure_type, is_pre_failure, round(fail_prob, 4), rul_seconds
 
@@ -580,7 +650,7 @@ def ensure_topics():
 
 # ── Main ──────────────────────────────────────────────────────────────────────
 def main():
-    log.info("hvac_consumer v6 | kafka=%s group=%s", KAFKA_BOOTSTRAP, CONSUMER_GROUP)
+    log.info("hvac_consumer v7 | kafka=%s group=%s", KAFKA_BOOTSTRAP, CONSUMER_GROUP)
 
     running = True
     def handle_signal(sig, frame):
@@ -592,16 +662,26 @@ def main():
 
     conn       = connect_postgres()
     ensure_schema(conn)
-    bundle_clf = load_model(MODEL_PATH)
-    bundle_rul = load_model(RUL_MODEL_PATH)
+    bundle_clf = load_clf_model(MODEL_PATH)
 
-    if bundle_rul is None:
-        log.warning("RUL model not found — rul_seconds will be NULL")
+    # Załaduj LSTM i przechowaj model w checkpoint
+    rul_checkpoint = load_rul_model(RUL_MODEL_PATH)
+    if rul_checkpoint is not None:
+        # Zbuduj model i zapisz referencję w checkpoint
+        lstm_model = LSTMRegressor(
+            input_size  = rul_checkpoint['input_size'],
+            hidden_size = rul_checkpoint['hidden_size'],
+            num_layers  = rul_checkpoint['num_layers'],
+            dropout     = rul_checkpoint['dropout'],
+        )
+        lstm_model.load_state_dict(rul_checkpoint['model_state'])
+        lstm_model.eval()
+        rul_checkpoint['model_ref'] = lstm_model
+        log.info("LSTM RUL ready | MAE=%.1fs (%.2fmin)",
+                 rul_checkpoint.get('mae', 0),
+                 rul_checkpoint.get('mae', 0) / 60)
     else:
-        log.info("RUL model loaded | version=%s RMSE=%.1fs MAE=%.1fs",
-                 bundle_rul.get('version', '?'),
-                 bundle_rul.get('rmse', 0),
-                 bundle_rul.get('mae', 0))
+        log.warning("RUL model not available — rul_seconds will be NULL")
 
     for attempt in range(10):
         try:
@@ -654,20 +734,17 @@ def main():
                                   online=TRUE
                             """, (device_id, event.get("lat"), event.get("lng")))
                         conn.commit()
-                        log.info("SERVICE | device=%s resolved=%s",
-                                 device_id, event.get('resolved_failure'))
+                        log.info("SERVICE | device=%s", device_id)
                     else:
                         event_uptime = event.get("uptime_seconds")
                         if event_uptime is not None:
                             uptime = float(event_uptime)
-                            DEVICE_UPTIME[device_id] = {
-                                'uptime': uptime, 'last_ts': time.time()
-                            }
+                            DEVICE_UPTIME[device_id] = {'uptime': uptime, 'last_ts': time.time()}
                         else:
                             uptime = get_uptime(device_id)
 
                         ml_score, failure_type, is_pre_failure, fail_prob, rul_seconds = \
-                            infer(bundle_clf, bundle_rul, event, uptime)
+                            infer(bundle_clf, rul_checkpoint, event, uptime)
                         severity = score_to_severity(ml_score)
 
                         save_event(conn, event, ml_score, failure_type,
@@ -677,10 +754,8 @@ def main():
                         if is_pre_failure:
                             rul_str = f"{rul_seconds:.0f}s" if rul_seconds is not None else "N/A"
                             log.warning(
-                                "PRE-FAILURE | device=%s prob=%.2f rul=%s "
-                                "failure=%s uptime=%.0fs",
-                                device_id, fail_prob, rul_str,
-                                failure_type, uptime,
+                                "PRE-FAILURE | device=%s prob=%.2f rul=%s failure=%s uptime=%.0fs",
+                                device_id, fail_prob, rul_str, failure_type, uptime,
                             )
 
                         msg_count += 1
