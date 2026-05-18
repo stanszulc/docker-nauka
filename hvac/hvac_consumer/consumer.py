@@ -1,8 +1,9 @@
 """
-hvac_consumer v6 — Single-event ML Consumer + RUL
+hvac_consumer v6 — Single-event ML Consumer + RUL + Warm Start
 Zmiany vs v5:
 - Dodany model RUL (hvac_rul_model_v1.pkl) równolegle do klasyfikatora
 - rul_seconds zapisywany do hvac_metrics gdy is_pre_failure=1
+- Warm start — nowe urządzenie wypełnia buffer pierwszym eventem (brak FP przy cold start)
 - Nowa zmienna środowiskowa RUL_MODEL_PATH
 """
 
@@ -132,6 +133,7 @@ CREATE INDEX IF NOT EXISTS idx_hvac_metrics_ts        ON hvac_metrics (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_hvac_alerts_ts         ON hvac_alerts_log (ts DESC);
 CREATE INDEX IF NOT EXISTS idx_hvac_alerts_device     ON hvac_alerts_log (device_id);
 CREATE INDEX IF NOT EXISTS idx_hvac_alerts_event_type ON hvac_alerts_log (event_type);
+CREATE INDEX IF NOT EXISTS idx_hvac_metrics_rul       ON hvac_metrics (device_id, ts DESC) WHERE rul_seconds IS NOT NULL;
 """
 
 # ── Per-device rolling buffer ─────────────────────────────────────────────────
@@ -156,6 +158,13 @@ class DeviceBuffer:
                          ['vibration', 'torque', 'rpm', 'proc_temp']}
 
         self.vib_esc_history = deque(maxlen=6)
+
+    def warm_start(self, sensor_row: dict):
+        """Wypełnia buffer syntetycznie pierwszym eventem — eliminuje cold start FP."""
+        for _ in range(WIN_LONG):
+            self.push(sensor_row)
+        # reset cumsumów — warm start nie powinien naliczać pre-alarmów
+        self.cumsum = {k: 0 for k in self.cumsum}
 
     def push(self, sensor_row: dict):
         pa = PRE_ALARM_THRESHOLDS
@@ -334,9 +343,13 @@ DEVICE_UPTIME:  dict = {}
 DEVICE_STREAK:  dict = {}
 
 
-def get_or_create_buffer(device_id: str) -> DeviceBuffer:
+def get_or_create_buffer(device_id: str, sensor_row: dict = None) -> 'DeviceBuffer':
     if device_id not in DEVICE_BUFFERS:
-        DEVICE_BUFFERS[device_id] = DeviceBuffer()
+        buf = DeviceBuffer()
+        if sensor_row is not None:
+            buf.warm_start(sensor_row)
+            log.info("Warm start | device=%s | buffer prefilled (%d ticks)", device_id, WIN_LONG)
+        DEVICE_BUFFERS[device_id] = buf
     return DEVICE_BUFFERS[device_id]
 
 
@@ -367,7 +380,6 @@ def load_model(path: str):
 def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
     """
     Zwraca: (ml_score, failure_type, is_pre_failure, fail_prob, rul_seconds)
-    rul_seconds = None gdy brak alarmu lub brak modelu RUL
     """
     failure_type = event.get("failure_type", "None")
     app_score    = event.get("ml_score", 0.0)
@@ -377,13 +389,12 @@ def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
 
     try:
         device_id = event["device_id"]
-        buf       = get_or_create_buffer(device_id)
 
         proc_temp = float(event.get("proc_temp", 60.0))
-        air_temp  = float(event.get("air_temp",  300.0))
+        air_temp  = float(event.get("air_temp",  20.0))
         rpm       = float(event.get("rpm",       1500))
         torque    = float(event.get("torque",    40.0))
-        vibration = float(event.get("vibration", 0.03))
+        vibration = float(event.get("vibration", 0.5))
 
         dT    = proc_temp - air_temp
         power = torque * (rpm * 2 * np.pi / 60)
@@ -399,7 +410,11 @@ def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
             'power_w':            power,
             'load_to_temp_ratio': ltr,
         }
+
+        # warm start przy pierwszym evencie nowego urządzenia
+        buf = get_or_create_buffer(device_id, sensor_row)
         buf.push(sensor_row)
+
         feats     = buf.build_features(uptime_seconds)
         feat_cols = bundle_clf['feature_cols']
         X         = np.array([[feats.get(c, 0.0) for c in feat_cols]])
@@ -410,14 +425,14 @@ def infer(bundle_clf, bundle_rul, event: dict, uptime_seconds: float) -> tuple:
         is_pre_failure_raw = 1 if fail_prob >= threshold else 0
         is_pre_failure     = update_streak(device_id, is_pre_failure_raw)
 
-        # ── RUL prediction ────────────────────────────────────
+        # RUL prediction
         rul_seconds = None
         if is_pre_failure and bundle_rul is not None:
             try:
                 rul_feat_cols = bundle_rul['feature_cols']
                 X_rul         = np.array([[feats.get(c, 0.0) for c in rul_feat_cols]])
                 rul_raw       = float(bundle_rul['model'].predict(X_rul)[0])
-                max_rul       = bundle_rul.get('max_rul', 1200)
+                max_rul       = bundle_rul.get('max_rul', 1800)
                 rul_seconds   = round(float(np.clip(rul_raw, 0, max_rul)), 1)
             except Exception as e:
                 log.warning("RUL inference error: %s", e)
@@ -688,8 +703,8 @@ def main():
                         )
                     conn.commit()
                     last_retention = time.time()
-                except Exception as e:
-                    log.warning("Retention failed: %s", e)
+                except Exception:
+                    pass
 
     finally:
         log.info("Closing. Total processed: %d", msg_count)
