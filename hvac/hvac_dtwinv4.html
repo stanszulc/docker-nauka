@@ -90,7 +90,7 @@ function generateDeviceProfile(){
 
 function detectFailures(s){
   const f=[];
-  if(s.vibration > 2.5)  f.push('vibration_high');
+  if(s.vibration > 7.1)  f.push('vibration_high');
   if(s.rpm < 1300)       f.push('rpm_low');
   if(s.rpm > 1700)       f.push('rpm_high');
   if(s.torque > 49)      f.push('torque_high');
