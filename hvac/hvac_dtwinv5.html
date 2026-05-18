@@ -79,36 +79,34 @@ function generateDeviceProfile(){
   };
 }
 
-// ── FIX #2: progi zgodne z symulatorem Python ──────────────────────────────
-// vibration: normalny<1.8 | pre-alarm 1.8-2.5 | failure>2.5 | defekt>7.1
-// rpm↓:      normalny 1400-1600 | pre-alarm 1300-1400 | failure<1300
-// rpm↑:      normalny 1400-1600 | pre-alarm 1600-1700 | failure>1700
-// torque↑:   normalny 35-45 | pre-alarm 45-49 | failure>49
-// torque↓:   normalny 35-45 | pre-alarm 33-35 | failure<33
-// temp↑:     normalny 50-70 | pre-alarm 70-75 | failure>75 | defekt>100
-// (Python defect>100, HTML failure>75 → ujednolicone: pre-alarm 70-75, failure>75, defect>100)
+// ── Progi zgodne z symulatorem Python ─────────────────────────────────────
+// FAULT (powoduje zamrożenie i service):
+//   vibration_high: >7.1  | rpm_low: <1000 | rpm_high: >2000
+//   torque_high: >65      | torque_low: <15 | temp_high: >100
+//
+// PRE-ALARM (ostrzeżenie, brak zamrożenia):
+//   vibration: 1.8-2.5 | rpm↓: 1300-1400 | rpm↑: 1600-1700
+//   torque↑: 49-65     | torque↓: 15-33  | temp: 75-100
 
 function detectFailures(s){
   const f=[];
   if(s.vibration > 7.1)  f.push('vibration_high');
-  if(s.rpm < 1300)       f.push('rpm_low');
-  if(s.rpm > 1700)       f.push('rpm_high');
-  if(s.torque > 49)      f.push('torque_high');
-  if(s.torque < 33)      f.push('torque_low');
-  // POPRAWKA: próg failure zgodny z symulatorem Python (był 75, teraz 100)
+  if(s.rpm < 1000)       f.push('rpm_low');
+  if(s.rpm > 2000)       f.push('rpm_high');
+  if(s.torque > 65)      f.push('torque_high');
+  if(s.torque < 15)      f.push('torque_low');
   if(s.proc_temp > 100)  f.push('temp_high');
   return f;
 }
 
 function detectPreAlarm(s){
   const p=[];
-  if(s.vibration >= 1.8 && s.vibration <= 2.5) p.push('vibration_high');
-  if(s.rpm >= 1300 && s.rpm < 1400)             p.push('rpm_low');
-  if(s.rpm > 1600 && s.rpm <= 1700)             p.push('rpm_high');
-  if(s.torque > 45 && s.torque <= 49)            p.push('torque_high');
-  if(s.torque >= 33 && s.torque < 35)            p.push('torque_low');
-  // POPRAWKA: pre-alarm 70-75, warning 75-100 (był 70-75 → freeze, teraz szerszy zakres)
-  if(s.proc_temp > 70 && s.proc_temp <= 100)     p.push('temp_high');
+  if(s.vibration >= 1.8 && s.vibration <= 7.1)  p.push('vibration_high');
+  if(s.rpm >= 1000 && s.rpm < 1300)              p.push('rpm_low');
+  if(s.rpm > 1700 && s.rpm <= 2000)              p.push('rpm_high');
+  if(s.torque > 49 && s.torque <= 65)            p.push('torque_high');
+  if(s.torque >= 15 && s.torque < 33)            p.push('torque_low');
+  if(s.proc_temp > 75 && s.proc_temp <= 100)     p.push('temp_high');
   return p;
 }
 
@@ -119,7 +117,7 @@ function sev(failures, preAlarms){
 }
 function sevColor(sv){return sv==='CRITICAL'?'var(--red)':sv==='WARNING'?'var(--amber)':'var(--green)';}
 
-// ── Grafika Wentylatora ───────────────────────────────────────────────────────────────
+// ── Grafika Wentylatora ───────────────────────────────────────────────────
 function Fan({rpm,vibration,frozen,failures}){
   const cvs=useRef(null), rot=useRef(0), frame=useRef(null), last=useRef(null), smoke=useRef([]);
   const hasTempFault = failures && failures.includes('temp_high');
@@ -166,7 +164,7 @@ function Fan({rpm,vibration,frozen,failures}){
   );
 }
 
-// ── Wskaźnik Arkusza ────────────────────────────────────────────────────────────────
+// ── Wskaźnik ────────────────────────────────────────────────────────────────
 function Gauge({label,value,min,max,unit,warn,danger}){
   const cvs=useRef(null);
   const isDanger=danger!=null&&value>=danger;
@@ -195,7 +193,7 @@ function Gauge({label,value,min,max,unit,warn,danger}){
   );
 }
 
-// ── Ekran Logowania ──────────────────────────────────────────────────────────────
+// ── Ekran Logowania ──────────────────────────────────────────────────────────
 function LoginScreen({onConnect}){
   const [id,setId]=useState('HVAC_01');
   const [url,setUrl]=useState('http://92.5.14.76:8002');
@@ -254,7 +252,7 @@ function LoginScreen({onConnect}){
       disabled:!id.trim()||!gpsReady,
       style:{width:'100%',background:(id.trim()&&gpsReady)?'var(--green-dark)':'#0a0a0a',border:`1px solid ${(id.trim()&&gpsReady)?'var(--green-dim)':'var(--border)'}`,borderRadius:10,color:(id.trim()&&gpsReady)?'var(--green)':'var(--text-muted)',fontSize:12,letterSpacing:4,padding:'16px',transition:'all .2s',cursor:(id.trim()&&gpsReady)?'pointer':'not-allowed'}
     },'POŁĄCZ I ROZPOCZNIJ'),
-    e('div',{style:{marginTop:20,textAlign:'center',fontSize:10,color:'var(--text-muted)',letterSpacing:2}},'HVAC Physics v6 · Celsius · 6 fault types · thresholds synced with simulator')
+    e('div',{style:{marginTop:20,textAlign:'center',fontSize:10,color:'var(--text-muted)',letterSpacing:2}},'HVAC Physics v6 · Celsius · 6 fault types · thresholds synced with simulator v7')
   );
 }
 
@@ -298,16 +296,10 @@ function MonitorScreen({config}){
     frozenRef.current=false;
   },[]);
 
-  // ── FIX #1: doService — najpierw generuj świeży stan, POTEM buduj payload ──
   const doService=useCallback(()=>{
     const lastFails=frozenFails.length?frozenFails:(stateRef.current?detectFailures(stateRef.current):[]);
-
-    // POPRAWKA: generujemy nowy normalny stan przed budowaniem payloadu,
-    // żeby sensory w evencie 'service' miały wartości po resecie (~60°C),
-    // a nie wartości failure (np. 108°C). Grafana dostaje spójny obraz.
     const freshState=normalState();
     stateRef.current=freshState;
-
     const payload={
       device_id:config.deviceId,
       lat:+config.gps.lat.toFixed(4),lng:+config.gps.lng.toFixed(4),
@@ -364,38 +356,26 @@ function MonitorScreen({config}){
       if(!m.has('vibration_high'))
         nx.vibration=clamp(nx.vibration+(R.vibration.mean-nx.vibration)*0.06,0.05,1.8);
 
-      const rpmMR = (m.has('rpm_low') || m.has('rpm_high')) ? 0 : 0.05;
-      nx.rpm = clamp(cur.rpm + (brpm - cur.rpm)*rpmMR + randn()*N*R.rpm.std, 800, 2500);
+      const rpmMR=(m.has('rpm_low')||m.has('rpm_high'))?0:0.05;
+      nx.rpm=clamp(cur.rpm+(brpm-cur.rpm)*rpmMR+randn()*N*R.rpm.std,800,2500);
 
-      if(m.has('vibration_high')){
-        ac.vibration_high++;
-        nx.vibration=clamp(nx.vibration+pr.vibRate+Math.abs(randn()*0.02),0.05,10.0);
-      } else ac.vibration_high=Math.max(0,ac.vibration_high-2);
+      if(m.has('vibration_high')){ac.vibration_high++;nx.vibration=clamp(nx.vibration+pr.vibRate+Math.abs(randn()*0.02),0.05,10.0);}
+      else ac.vibration_high=Math.max(0,ac.vibration_high-2);
 
-      if(m.has('rpm_low')){
-        ac.rpm_low++;
-        nx.rpm=clamp(nx.rpm-pr.rpmRate+randn()*2,800,2500);
-      } else ac.rpm_low=Math.max(0,ac.rpm_low-1);
+      if(m.has('rpm_low')){ac.rpm_low++;nx.rpm=clamp(nx.rpm-pr.rpmRate+randn()*2,800,2500);}
+      else ac.rpm_low=Math.max(0,ac.rpm_low-1);
 
-      if(m.has('rpm_high')){
-        ac.rpm_high++;
-        nx.rpm=clamp(nx.rpm+pr.rpmRate+randn()*2,800,2500);
-      } else ac.rpm_high=Math.max(0,ac.rpm_high-1);
+      if(m.has('rpm_high')){ac.rpm_high++;nx.rpm=clamp(nx.rpm+pr.rpmRate+randn()*2,800,2500);}
+      else ac.rpm_high=Math.max(0,ac.rpm_high-1);
 
-      if(m.has('torque_high')){
-        ac.torque_high++;
-        nx.torque=clamp(nx.torque+pr.torqRate+randn()*0.1,5.0,80.0);
-      } else ac.torque_high=Math.max(0,ac.torque_high-1);
+      if(m.has('torque_high')){ac.torque_high++;nx.torque=clamp(nx.torque+pr.torqRate+randn()*0.1,5.0,80.0);}
+      else ac.torque_high=Math.max(0,ac.torque_high-1);
 
-      if(m.has('torque_low')){
-        ac.torque_low++;
-        nx.torque=clamp(nx.torque-pr.torqRate+randn()*0.1,5.0,80.0);
-      } else ac.torque_low=Math.max(0,ac.torque_low-1);
+      if(m.has('torque_low')){ac.torque_low++;nx.torque=clamp(nx.torque-pr.torqRate+randn()*0.1,5.0,80.0);}
+      else ac.torque_low=Math.max(0,ac.torque_low-1);
 
-      if(m.has('temp_high')){
-        ac.temp_high++;
-        nx.proc_temp=clamp(nx.proc_temp+pr.tempRate+randn()*0.1,R.proc_temp.min,120.0);
-      } else ac.temp_high=Math.max(0,ac.temp_high-1);
+      if(m.has('temp_high')){ac.temp_high++;nx.proc_temp=clamp(nx.proc_temp+pr.tempRate+randn()*0.1,R.proc_temp.min,120.0);}
+      else ac.temp_high=Math.max(0,ac.temp_high-1);
 
       stateRef.current=nx;
       uptimeRef.current+=1;
@@ -410,16 +390,9 @@ function MonitorScreen({config}){
         setFrozenFails([...f]);
       }
 
-      setSs({...nx});
-      setFails(f);
-      setPreAlarms(pa);
-      setSv(sv_);
+      setSs({...nx});setFails(f);setPreAlarms(pa);setSv(sv_);
 
-      bufferRef.current.push({
-        air_temp:nx.air_temp,proc_temp:nx.proc_temp,
-        rpm:nx.rpm,torque:nx.torque,vibration:nx.vibration,
-        f,pa,sv:sv_
-      });
+      bufferRef.current.push({air_temp:nx.air_temp,proc_temp:nx.proc_temp,rpm:nx.rpm,torque:nx.torque,vibration:nx.vibration,f,pa,sv:sv_});
 
       const ts=new Date().toLocaleTimeString('pl-PL');
       if(bufferRef.current.length>=BUFFER_SIZE){
@@ -504,12 +477,11 @@ function MonitorScreen({config}){
     ),
     e('div',{style:{padding:'0 12px 8px'}},
       e('div',{style:{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}},
-        e(Gauge,{label:'AIR TEMP',   value:ss.air_temp,  min:R.air_temp.min,  max:R.air_temp.max+5,  unit:'°C', warn:30,  danger:35}),
-        // POPRAWKA: Gauge PROC TEMP — warn:75 (pre-alarm), danger:100 (failure), max:120
-        e(Gauge,{label:'PROC TEMP',  value:ss.proc_temp, min:R.proc_temp.min, max:120,                unit:'°C', warn:75,  danger:100}),
-        e(Gauge,{label:'RPM',        value:ss.rpm,       min:800,             max:2500,              unit:'rpm',warn:1700, danger:2000}),
-        e(Gauge,{label:'TORQUE',     value:ss.torque,    min:5,               max:80,                unit:'Nm', warn:45,  danger:49}),
-        e(Gauge,{label:'VIBRATION',  value:ss.vibration, min:0,               max:8,                 unit:'mm/s',warn:1.8, danger:2.5}),
+        e(Gauge,{label:'AIR TEMP',   value:ss.air_temp,  min:R.air_temp.min,  max:R.air_temp.max+5,  unit:'°C',  warn:30,   danger:35}),
+        e(Gauge,{label:'PROC TEMP',  value:ss.proc_temp, min:R.proc_temp.min, max:120,               unit:'°C',  warn:75,   danger:100}),
+        e(Gauge,{label:'RPM',        value:ss.rpm,       min:800,             max:2500,              unit:'rpm', warn:1700, danger:2000}),
+        e(Gauge,{label:'TORQUE',     value:ss.torque,    min:5,               max:80,                unit:'Nm',  warn:49,   danger:65}),
+        e(Gauge,{label:'VIBRATION',  value:ss.vibration, min:0,               max:8,                 unit:'mm/s',warn:2.5,  danger:7.1}),
       )
     ),
     e('div',{style:{padding:'0 12px 8px',opacity:frozen?0.4:1,pointerEvents:frozen?'none':'auto'}},
@@ -549,7 +521,7 @@ function App(){
   return cfg?React.createElement(MonitorScreen,{config:cfg}):React.createElement(LoginScreen,{onConnect:setCfg});
 }
 
-const root = ReactDOM.createRoot(document.getElementById('root'));
+const root=ReactDOM.createRoot(document.getElementById('root'));
 root.render(React.createElement(App));
 });
 </script>
