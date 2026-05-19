@@ -4,7 +4,8 @@ Zmiany vs v6:
 - Model RUL: XGBoost → LSTM (PyTorch)
 - LSTM używa sekwencji 60 ostatnich ticków z DeviceBuffer
 - Scaler i feature_cols załadowane z bundle .pt
-- Warm start nadal aktywny
+- Warm start wypełnia feature_history (fix rul=0s)
+- Wyciszone ostrzeżenia sklearn
 """
 
 import os
@@ -13,6 +14,9 @@ import time
 import logging
 import signal
 import sys
+import warnings
+warnings.filterwarnings("ignore", category=UserWarning)
+
 from collections import deque
 from datetime import datetime, timezone
 
@@ -184,14 +188,21 @@ class DeviceBuffer:
         self.esc_bufs        = {s: deque(maxlen=6) for s in ['vibration', 'torque', 'rpm', 'proc_temp']}
         self.vib_esc_history = deque(maxlen=6)
 
-        # Historia features dla LSTM — trzyma ostatnie WIN_LONG snapshots
+        # Historia features dla LSTM
         self.feature_history = deque(maxlen=WIN_LONG)
 
     def warm_start(self, sensor_row: dict):
+        """Wypełnia bufor i feature_history pierwszym eventem — eliminuje cold start."""
         for _ in range(WIN_LONG):
             self.push(sensor_row)
-        self.cumsum = {k: 0 for k in self.cumsum}
+        # Wygeneruj snapshot features i wypełnij feature_history
+        dummy_feats = self.build_features(0.0)
         self.feature_history.clear()
+        for _ in range(WIN_LONG):
+            self.feature_history.append(dict(dummy_feats))
+        # Reset cumsumów — warm start nie powinien naliczać pre-alarmów
+        self.cumsum = {k: 0 for k in self.cumsum}
+        log.debug("Warm start complete | feature_history=%d", len(self.feature_history))
 
     def push(self, sensor_row: dict):
         pa = PRE_ALARM_THRESHOLDS
@@ -365,8 +376,10 @@ class DeviceBuffer:
     def get_sequence(self, feature_cols: list, seq_len: int) -> np.ndarray:
         """Zwraca sekwencję [seq_len x features] z historii."""
         history = list(self.feature_history)
+        if len(history) == 0:
+            # fallback — pusta historia, zwróć zera
+            return np.zeros((seq_len, len(feature_cols)), dtype=np.float32)
         if len(history) < seq_len:
-            # pad z pierwszym dostępnym snapshoten
             pad = [history[0]] * (seq_len - len(history))
             history = pad + history
         history = history[-seq_len:]
@@ -387,7 +400,7 @@ def get_or_create_buffer(device_id: str, sensor_row: dict = None) -> DeviceBuffe
         buf = DeviceBuffer()
         if sensor_row is not None:
             buf.warm_start(sensor_row)
-            log.info("Warm start | device=%s", device_id)
+            log.info("Warm start | device=%s | feature_history=%d", device_id, len(buf.feature_history))
         DEVICE_BUFFERS[device_id] = buf
     return DEVICE_BUFFERS[device_id]
 
@@ -435,7 +448,7 @@ def load_rul_model(path: str):
                  checkpoint.get('seq_len', 60),
                  checkpoint.get('rmse', 0),
                  checkpoint.get('mae', 0))
-        return checkpoint  # zwracamy cały checkpoint (zawiera scaler, feature_cols itd.)
+        return checkpoint
     except Exception as e:
         log.error("Failed to load RUL model: %s", e)
         return None
@@ -490,16 +503,12 @@ def infer(bundle_clf, rul_checkpoint, event: dict, uptime_seconds: float) -> tup
                 max_rul       = rul_checkpoint.get('max_rul', 1800)
                 scaler        = rul_checkpoint['scaler']
 
-                # pobierz sekwencję z bufora
-                seq = buf.get_sequence(feat_cols_rul, seq_len)  # [seq_len x features]
-
-                # normalizacja
-                seq_2d       = seq.reshape(-1, seq.shape[-1])
-                seq_scaled   = scaler.transform(seq_2d).astype(np.float32)
-                seq_3d       = seq_scaled.reshape(1, seq_len, -1)
+                seq    = buf.get_sequence(feat_cols_rul, seq_len)
+                seq_2d = seq.reshape(-1, seq.shape[-1])
+                seq_scaled = scaler.transform(seq_2d).astype(np.float32)
+                seq_3d = seq_scaled.reshape(1, seq_len, -1)
 
                 X_rul = torch.tensor(seq_3d, dtype=torch.float32)
-
                 with torch.no_grad():
                     rul_raw = rul_checkpoint['model_ref'](X_rul).item()
 
@@ -664,10 +673,8 @@ def main():
     ensure_schema(conn)
     bundle_clf = load_clf_model(MODEL_PATH)
 
-    # Załaduj LSTM i przechowaj model w checkpoint
     rul_checkpoint = load_rul_model(RUL_MODEL_PATH)
     if rul_checkpoint is not None:
-        # Zbuduj model i zapisz referencję w checkpoint
         lstm_model = LSTMRegressor(
             input_size  = rul_checkpoint['input_size'],
             hidden_size = rul_checkpoint['hidden_size'],
