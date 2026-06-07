@@ -2,3 +2,7 @@
 *.env
 *.zip
 *~
+hvac/*.csv
+hvac/*.log
+hvac/nohup.out
+hvac/2.5
