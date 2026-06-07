@@ -32,7 +32,7 @@ services:
         max-size: "10m"
         max-file: "3"
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
       interval: 30s
       timeout: 5s
       retries: 3
@@ -50,7 +50,7 @@ services:
       CONSUMER_GROUP:   "hvac_ml_group"
       POSTGRES_DSN:     "postgresql://kafka:kafka@postgres:5432/events"
       MODEL_PATH:       "/app/model/hvac_rf_model.pkl"
-      ALERT_THRESHOLD:  "0.5"
+      ALERT_THRESHOLD:  "0.65"
       CONSECUTIVE_MIN:  "3"
       RETENTION_HOURS:  "168"
       LOG_LEVEL:        "INFO"
